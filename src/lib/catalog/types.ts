@@ -42,6 +42,7 @@ export type SearchParams = {
   inStock?: boolean;
   limit?: number;
   cursor?: string;
+  maxPrice?: number;
 };
 
 export type SearchResult = {

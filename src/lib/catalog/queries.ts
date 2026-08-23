@@ -49,6 +49,7 @@ export async function searchProducts(params: SearchParams): Promise<SearchResult
   const category = params.category;
   const inStock = params.inStock;
   const cursor = params.cursor;
+  const maxPrice = params.maxPrice;
 
   const where: Record<string, unknown> = {
     status: "ACTIVE",
@@ -68,6 +69,10 @@ export async function searchProducts(params: SearchParams): Promise<SearchResult
 
   if (inStock) {
     where["stock"] = { gt: 0 };
+  }
+
+  if (maxPrice !== undefined) {
+    where["price"] = { lte: maxPrice };
   }
 
   const products = await prisma.product.findMany({
