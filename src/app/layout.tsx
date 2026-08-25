@@ -8,8 +8,8 @@ const geistSans = Geist({
 });
 
 export const metadata: Metadata = {
-  title: "Agentic Commerce — Phase 0",
-  description: "Phase 0 foundation for Agentic Commerce (Track 01).",
+  title: "ElectroCore — AI Shopping Assistant",
+  description: "ElectroCore AI Buyer — grounded product search over the real catalog.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
