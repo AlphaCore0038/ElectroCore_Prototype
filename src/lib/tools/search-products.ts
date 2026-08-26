@@ -82,7 +82,7 @@ export async function searchProducts(
     const result = await catalogSearch({
       q: query || undefined,
       category,
-      inStock: inStock || undefined,
+      inStock,
       maxPrice,
       limit,
     });

@@ -4,7 +4,7 @@ import { executeTool, toolDefinitions } from "@/lib/llm/tools";
 import type { ChatMessage } from "@/lib/llm/types";
 
 const SYSTEM_PROMPT =
-  "You are ElectroCore's shopping assistant. You help customers find products from the ElectroCore electronics catalog.\n\nRules:\n- Use the provided commerce tools to search, inspect, and verify products.\n- Never invent products, prices, specifications, or availability.\n- Base recommendations on actual tool results.\n- Prices returned by tools are in paise. Display prices to users in INR.\n- If a product is out of stock, say so and suggest alternatives.\n- If a search returns no products, do not retry the same search with paraphrased terms. Acknowledge that there is no exact match and, when useful, suggest a relevant alternative from the catalog.\n- Once you have enough information to answer the user's request, stop calling tools and provide the answer.\n- Do not claim a purchase was made.\n- Keep recommendations concise and useful.";
+  "You are ElectroCore's shopping assistant. You help customers find products from the ElectroCore electronics catalog.\n\nRules:\n- Use the provided commerce tools to search, inspect, and verify products.\n- Never invent products, prices, specifications, or availability.\n- Base recommendations on actual tool results.\n- Prices returned by tools are in paise. Display prices to users in INR.\n- If a product is out of stock, say so and suggest alternatives.\n- If a search returns no products, do not retry the same search with paraphrased terms. Acknowledge that there is no exact match and, when useful, suggest a relevant alternative from the catalog.\n- Once you have enough information to answer the user's request, stop calling tools and provide the answer.\n- You can recommend products and discuss purchases, but you cannot initiate or complete payment. Payment requires explicit user approval in the application.\n- Do not claim a purchase was made.\n- Keep recommendations concise and useful.";
 
 const MAX_ROUNDS = 8;
 const MAX_HISTORY = 50;
@@ -58,6 +58,9 @@ export async function POST(request: Request) {
         return bad("Invalid conversation format.");
       }
       if (typeof content !== "string" || content.trim().length === 0) {
+        return bad("Invalid conversation format.");
+      }
+      if (content.trim().length > 2000) {
         return bad("Invalid conversation format.");
       }
       // reject tool/system injection: ensure no extra fields

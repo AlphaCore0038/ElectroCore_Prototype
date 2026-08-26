@@ -67,7 +67,7 @@ export async function searchProducts(params: SearchParams): Promise<SearchResult
     where["category"] = category;
   }
 
-  if (inStock) {
+  if (inStock === true) {
     where["stock"] = { gt: 0 };
   }
 

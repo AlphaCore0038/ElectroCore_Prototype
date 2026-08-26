@@ -20,6 +20,7 @@ model Merchant {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   products    Product[]
+  orders      Order[]
 }
 
 enum ProductCategory {
@@ -54,7 +55,119 @@ model Product {
   attributes  Json?
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
+  intents     PurchaseIntent[]
+  orderItems  OrderItem[]
 
   @@index([merchantId, category, status])
   @@index([name])
+}
+
+enum IntentStatus {
+  PENDING
+  CONSUMED
+  EXPIRED
+  REJECTED
+}
+
+enum OrderStatus {
+  PAID
+  FAILED
+  REFUNDED
+}
+
+enum PaymentStatus {
+  CREATED
+  VERIFIED
+  FAILED
+}
+
+model PurchaseIntent {
+  id        String       @id @default(cuid())
+  productId String
+  product   Product      @relation(fields: [productId], references: [id])
+  quantity  Int          @default(1)
+  unitPrice Int
+  total     Int
+  currency  String       @default("INR")
+  status    IntentStatus @default(PENDING)
+  expiresAt DateTime
+  createdAt DateTime     @default(now())
+  orders    Order[]
+  payments  Payment[]
+  audits    AuditEvent[]
+
+  @@index([productId, status])
+  @@index([status, expiresAt])
+}
+
+model Order {
+  id         String      @id @default(cuid())
+  intentId   String      @unique
+  intent     PurchaseIntent @relation(fields: [intentId], references: [id])
+  merchantId String
+  merchant   Merchant    @relation(fields: [merchantId], references: [id])
+  total      Int
+  currency   String      @default("INR")
+  status     OrderStatus @default(PAID)
+  createdAt  DateTime    @default(now())
+  items      OrderItem[]
+  payment    Payment?
+  audits     AuditEvent[]
+
+  @@index([merchantId])
+}
+
+model OrderItem {
+  id        String  @id @default(cuid())
+  orderId   String
+  order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+  slug      String
+  name      String
+  sku       String
+  unitPrice Int
+  quantity  Int
+  total     Int
+
+  @@index([orderId])
+  @@index([productId])
+}
+
+model Payment {
+  id                String        @id @default(cuid())
+  orderId           String?       @unique
+  order             Order?        @relation(fields: [orderId], references: [id])
+  intentId          String        @unique
+  intent            PurchaseIntent @relation(fields: [intentId], references: [id])
+  razorpayOrderId   String        @unique
+  razorpayPaymentId String?       @unique
+  razorpaySignature String?
+  amount            Int
+  currency          String        @default("INR")
+  status            PaymentStatus @default(CREATED)
+  createdAt         DateTime      @default(now())
+  verifiedAt        DateTime?
+  audits            AuditEvent[]
+
+  @@index([intentId])
+  @@index([razorpayOrderId])
+}
+
+model AuditEvent {
+  id        String   @id @default(cuid())
+  intentId  String?
+  intent    PurchaseIntent? @relation(fields: [intentId], references: [id])
+  orderId   String?
+  order     Order?   @relation(fields: [orderId], references: [id])
+  paymentId String?
+  payment   Payment? @relation(fields: [paymentId], references: [id])
+  type      String
+  reason    String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([intentId])
+  @@index([orderId])
+  @@index([type, createdAt])
 }
