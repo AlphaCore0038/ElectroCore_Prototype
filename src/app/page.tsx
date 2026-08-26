@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 type Msg = { role: "user" | "assistant"; content: string };
@@ -43,6 +44,8 @@ export default function Home() {
   const [intent, setIntent] = useState<{ intentId: string; total: number; unitPrice: number; product: { name: string; slug: string } } | null>(null);
   const [orderId, setOrderId] = useState<string | null>(null);
   const [audit, setAudit] = useState<{ type: string; reason?: string; createdAt: string }[]>([]);
+  const [postRec, setPostRec] = useState<{ recommendation: { slug: string; name: string; price: number; description: string } | null; reason: string | null } | null>(null);
+  const [postRecLoading, setPostRecLoading] = useState(false);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -118,12 +121,23 @@ export default function Home() {
     } catch {}
   }
 
+  async function fetchPostPurchase(product: string) {
+    setPostRecLoading(true);
+    try {
+      const r = await fetch(`/api/merchant/cross-sell?product=${encodeURIComponent(product)}`);
+      const j = (await r.json()) as { ok: boolean; data?: { recommendation: { slug: string; name: string; price: number; description: string } | null; reason: string | null } };
+      if (j.ok && j.data) setPostRec({ recommendation: j.data.recommendation, reason: j.data.reason });
+    } catch {}
+    setPostRecLoading(false);
+  }
+
   async function handleApproveAndPay() {
     setPurchaseError(null);
     setPurchaseSuccess(null);
     setOrderId(null);
     setIntent(null);
     setAudit([]);
+    setPostRec(null);
     setPurchaseLoading(true);
     try {
       // 1. prepare
@@ -237,7 +251,10 @@ export default function Home() {
             <p className="text-sm font-semibold tracking-tight text-zinc-100">ElectroCore</p>
             <p className="text-xs tracking-widest text-zinc-500 uppercase">AI Shopping Assistant</p>
           </div>
-          <span className="rounded-full border border-zinc-800 bg-zinc-900 px-3 py-1 text-xs text-zinc-400">Track 01 · Pay</span>
+          <div className="flex items-center gap-2">
+            <Link href="/merchant" className="rounded-full border border-zinc-800 bg-zinc-900 px-3 py-1 text-xs text-zinc-400 hover:bg-zinc-800">Merchant →</Link>
+            <span className="rounded-full border border-zinc-800 bg-zinc-900 px-3 py-1 text-xs text-zinc-400">Track 01 · Pay</span>
+          </div>
         </div>
       </header>
 
@@ -322,6 +339,24 @@ export default function Home() {
               {purchaseError && <p className="mt-2 rounded-lg border border-red-900/50 bg-red-950/40 px-3 py-2 text-sm text-red-300">{purchaseError}</p>}
               {purchaseSuccess && <p className="mt-2 rounded-lg border border-emerald-900/50 bg-emerald-950/40 px-3 py-2 text-sm text-emerald-300">{purchaseSuccess}</p>}
               {orderId && <p className="mt-1 text-xs text-zinc-400">Order ID: {orderId}</p>}
+              {orderId && intent && (
+                <div className="mt-3 rounded-lg border border-zinc-800 bg-zinc-950 p-3">
+                  <p className="text-xs font-medium text-zinc-400">You might also like</p>
+                  {!postRec && (
+                    <button onClick={() => fetchPostPurchase(intent.product.slug)} disabled={postRecLoading} className="mt-2 rounded-full border border-zinc-700 bg-zinc-900 px-4 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800 disabled:opacity-40">
+                      {postRecLoading ? "Finding…" : `Show complement for ${intent.product.name}`}
+                    </button>
+                  )}
+                  {postRec && postRec.recommendation && (
+                    <div className="mt-2 text-sm">
+                      <p className="font-medium text-zinc-100">{postRec.recommendation.name} — {formatPaise(postRec.recommendation.price)}</p>
+                      <p className="text-xs text-zinc-400">{postRec.recommendation.description}</p>
+                      <p className="mt-1 text-xs leading-5 text-zinc-300">AI: {postRec.reason}</p>
+                    </div>
+                  )}
+                  {postRec && !postRec.recommendation && <p className="mt-2 text-xs text-zinc-400">{postRec.reason}</p>}
+                </div>
+              )}
 
               {audit.length > 0 && (
                 <div className="mt-3 border-t border-zinc-800 pt-3">

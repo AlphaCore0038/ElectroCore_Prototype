@@ -1,6 +1,7 @@
 import { searchProducts } from "@/lib/tools/search-products";
 import { getProduct } from "@/lib/tools/get-product";
 import { checkInventory } from "@/lib/tools/check-inventory";
+import { findRelatedProducts } from "@/lib/tools/find-related";
 import type { ToolDefinition } from "./types";
 
 export const toolDefinitions: ToolDefinition[] = [
@@ -53,6 +54,21 @@ export const toolDefinitions: ToolDefinition[] = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "find_related_products",
+      description: "Find ACTIVE in-stock products related to a given product via compatibleWith and same category. Use to suggest complements or cross-sell.",
+      parameters: {
+        type: "object",
+        properties: {
+          product: { type: "string", description: "Source product id or slug" },
+          limit: { type: "integer", description: "Max results 1-5, default 2" },
+        },
+        required: ["product"],
+      },
+    },
+  },
 ];
 
 export async function executeTool(name: string, argsJson: string): Promise<string> {
@@ -72,6 +88,8 @@ export async function executeTool(name: string, argsJson: string): Promise<strin
       return JSON.stringify(await getProduct(args as { product: string }));
     case "check_inventory":
       return JSON.stringify(await checkInventory(args as { product: string }));
+    case "find_related_products":
+      return JSON.stringify(await findRelatedProducts(args as { product: string; limit?: number }));
     default:
       return JSON.stringify({ ok: false, error: "UNKNOWN_TOOL", message: `Unknown tool: ${name}` });
   }
