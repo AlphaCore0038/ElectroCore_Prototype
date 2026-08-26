@@ -103,17 +103,18 @@ export async function POST(request: Request) {
 
   try {
     const order = await prisma.$transaction(async (tx) => {
-      if (product.stock < intent.quantity) {
-        throw new Error("OUT_OF_STOCK");
-      }
-
-      const updatedProduct = await tx.product.update({
-        where: { id: product.id },
-        data: { stock: { decrement: intent.quantity } },
+      const updated = await tx.product.updateMany({
+        where: {
+          id: product.id,
+          stock: { gte: intent.quantity },
+        },
+        data: {
+          stock: { decrement: intent.quantity },
+        },
       });
 
-      if (updatedProduct.stock < 0) {
-        throw new Error("STOCK_NEGATIVE");
+      if (updated.count === 0) {
+        throw new Error("OUT_OF_STOCK");
       }
 
       const createdOrder = await tx.order.create({
