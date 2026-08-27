@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { ProductCard } from "@/components/product-card";
+import { LeftNav } from "@/components/left-nav";
 
 const PRODUCTS = [
   { slug: "sony-wh-1000xm5", label: "Sony WH-1000XM5 — ₹29,990" },
@@ -40,6 +41,7 @@ export default function MerchantPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<MerchantData | null>(null);
+  const [mobileNav, setMobileNav] = useState(false);
 
   async function find() {
     setLoading(true);
@@ -61,86 +63,187 @@ export default function MerchantPage() {
   }
 
   return (
-    <div className="flex min-h-dvh flex-col bg-zinc-950 text-zinc-100">
-      <header className="border-b border-zinc-800 bg-zinc-950">
-        <div className="mx-auto flex w-full max-w-2xl items-center justify-between px-4 py-4 sm:px-6">
-          <div>
-            <p className="text-sm font-semibold tracking-tight text-zinc-100">ElectroCore</p>
-            <p className="text-xs tracking-widest text-zinc-500 uppercase">AI Merchant Advisor</p>
+    <div className="flex h-dvh flex-col bg-zinc-950 text-zinc-100">
+      {/* Top Bar */}
+      <header className="flex items-center justify-between border-b border-zinc-800 bg-zinc-950 px-4 py-2.5 lg:px-5 shrink-0">
+        <div className="flex items-center gap-3">
+          <button onClick={() => setMobileNav(!mobileNav)} className="lg:hidden text-zinc-400 hover:text-zinc-200 p-1" aria-label="Toggle navigation">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 12h18M3 6h18M3 18h18" /></svg>
+          </button>
+          <div className="flex items-center gap-2">
+            <div className="h-6 w-6 rounded-md bg-zinc-800 flex items-center justify-center text-[10px] font-bold text-zinc-300">E</div>
+            <span className="text-sm font-bold tracking-tight text-zinc-100 hidden sm:inline">ElectroCore</span>
           </div>
-          <Link href="/" className="rounded-full border border-zinc-800 bg-zinc-900 px-3 py-1 text-xs text-zinc-400 hover:bg-zinc-800">
-            Buyer →
+          <span className="text-[10px] font-semibold tracking-[0.2em] text-zinc-600 uppercase hidden sm:inline">AI Commerce</span>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <span className="flex items-center gap-1.5 rounded-full bg-zinc-900 border border-zinc-800 px-2.5 py-1 text-[10px] text-zinc-400">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse-dot" />
+            AI ASSISTANT
+          </span>
+          <Link
+            href="/"
+            className="rounded-full border border-zinc-800 bg-zinc-900 px-3 py-1 text-[11px] text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-colors hidden sm:inline"
+          >
+            AI Shopping
           </Link>
         </div>
       </header>
-      <main className="mx-auto w-full max-w-2xl px-4 py-8 sm:px-6">
-        <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-6">
-          <h1 className="text-2xl font-semibold tracking-tight">Turn every purchase into a smarter recommendation.</h1>
-          <p className="mt-2 text-sm leading-6 text-zinc-400">AI cross-sell grounded in catalog truth — compatibleWith, category, stock and price. No invented products.</p>
-        </div>
 
-        <div className="mt-6 rounded-xl border border-zinc-800 bg-zinc-900 p-4">
-          <p className="text-xs font-medium tracking-widest text-zinc-500 uppercase">Select purchased product</p>
-          <div className="mt-3 flex gap-2">
-            <select value={product} onChange={(e) => setProduct(e.target.value)} className="flex-1 rounded-full border border-zinc-700 bg-zinc-950 px-4 py-2.5 text-sm text-zinc-100 focus:border-zinc-600 focus:outline-none" aria-label="Select product">
-              {PRODUCTS.map((p) => (
-                <option key={p.slug} value={p.slug}>{p.label}</option>
-              ))}
-            </select>
-            <button onClick={find} disabled={loading} className="rounded-full bg-zinc-100 px-6 py-2.5 text-sm font-medium text-zinc-900 hover:bg-white disabled:opacity-40 focus:outline-none focus:ring-2 focus:ring-zinc-300">
-              {loading ? "Thinking…" : "Find Cross-Sell"}
-            </button>
+      {/* Mobile nav overlay */}
+      {mobileNav && (
+        <div className="lg:hidden border-b border-zinc-800 bg-zinc-950">
+          <div className="px-4 py-3 space-y-1">
+            <Link href="/" onClick={() => setMobileNav(false)} className="block rounded-lg px-3 py-2 text-sm text-zinc-400 hover:bg-zinc-900">AI Shopping</Link>
+            <Link href="/merchant" onClick={() => setMobileNav(false)} className="block rounded-lg bg-zinc-800 px-3 py-2 text-sm text-zinc-100">Merchant Advisor</Link>
           </div>
-          <p className="mt-2 text-xs text-zinc-500">Deterministic candidates from ACTIVE in-stock catalog, LLM explains the best fit.</p>
+        </div>
+      )}
+
+      {/* Three-Zone Body */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Left Nav — desktop only */}
+        <div className="hidden lg:flex">
+          <LeftNav activePage="merchant" />
         </div>
 
-        {error && <p className="mt-4 rounded-lg border border-red-900/50 bg-red-950/40 px-3 py-2 text-sm text-red-300">{error}</p>}
-
-        {data && (
-          <div className="mt-6 space-y-4 animate-in fade-in">
-            {data.recommendation ? (
-              <>
-                <div>
-                  <p className="text-xs font-medium tracking-widest text-zinc-500 uppercase">AI Cross-Sell Opportunity</p>
-                  <div className="mt-3 max-w-sm">
-                    <ProductCard
-                      product={{
-                        slug: data.recommendation.slug,
-                        name: data.recommendation.name,
-                        price: data.recommendation.price,
-                        currency: data.recommendation.currency,
-                        stock: 1,
-                        status: "ACTIVE",
-                        description: data.recommendation.description,
-                        attributes: data.recommendation.attributes ?? null,
-                        imageUrl: data.recommendation.imageUrl ?? null,
-                      }}
-                      variant="complement"
-                    />
-                  </div>
+        {/* Center — Content */}
+        <div className="flex flex-1 flex-col overflow-hidden min-w-0">
+          <div className="flex-1 overflow-y-auto">
+            <div className="mx-auto w-full max-w-3xl px-4 py-6 lg:px-6">
+              {/* Hero */}
+              <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-6 mb-6">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="h-6 w-6 rounded bg-zinc-800 flex items-center justify-center text-[9px] font-bold text-zinc-400">⟡</div>
+                  <p className="text-[10px] font-semibold tracking-[0.2em] text-zinc-500 uppercase">AI Merchant Advisor</p>
                 </div>
-                <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4">
-                  <p className="text-xs font-medium tracking-widest text-zinc-500 uppercase">Why this product</p>
-                  <p className="mt-2 text-sm leading-6 text-zinc-300">{data.reason}</p>
-                </div>
-                <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
-                  <p className="text-xs font-medium tracking-widest text-zinc-500 uppercase">Catalog evidence</p>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    <span className="rounded-full border border-emerald-900/50 bg-emerald-950/40 px-3 py-1 text-xs text-emerald-300">● Compatible</span>
-                    <span className="rounded-full border border-emerald-900/50 bg-emerald-950/40 px-3 py-1 text-xs text-emerald-300">● In stock</span>
-                    <span className="rounded-full border border-zinc-800 bg-zinc-900 px-3 py-1 text-xs text-zinc-400">Relevant category</span>
-                  </div>
-                  <p className="mt-2 text-xs text-zinc-500">Evidence derived from deterministic find_related_products (ACTIVE, stock&gt;0, compatibleWith + category).</p>
-                </div>
-              </>
-            ) : (
-              <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-5">
-                <p className="text-sm text-zinc-400">{data.reason}</p>
+                <h1 className="text-xl font-bold tracking-tight">Turn every purchase into a smarter recommendation.</h1>
+                <p className="mt-2 text-sm leading-6 text-zinc-400 max-w-lg">
+                  AI cross-sell grounded in catalog truth — compatibleWith, category, stock and price. No invented products.
+                </p>
               </div>
-            )}
+
+              {/* Cross-sell selector */}
+              <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4 mb-6">
+                <p className="text-[10px] font-semibold tracking-[0.15em] text-zinc-500 uppercase mb-2">Select purchased product</p>
+                <div className="flex gap-2">
+                  <select
+                    value={product}
+                    onChange={(e) => setProduct(e.target.value)}
+                    className="flex-1 rounded-xl border border-zinc-700 bg-zinc-950 px-4 py-2.5 text-sm text-zinc-100 focus:border-zinc-600 focus:outline-none transition-colors"
+                    aria-label="Select product"
+                  >
+                    {PRODUCTS.map((p) => (
+                      <option key={p.slug} value={p.slug}>{p.label}</option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={find}
+                    disabled={loading}
+                    className="rounded-xl bg-zinc-100 px-5 py-2.5 text-sm font-medium text-zinc-900 hover:bg-white disabled:opacity-40 focus:outline-none focus:ring-2 focus:ring-zinc-300 transition-colors"
+                  >
+                    {loading ? "Thinking…" : "Find Cross-Sell"}
+                  </button>
+                </div>
+                <p className="mt-2 text-[10px] text-zinc-600">Deterministic candidates from ACTIVE in-stock catalog, LLM explains the best fit.</p>
+              </div>
+
+              {error && (
+                <p className="mb-4 rounded-xl border border-red-900/50 bg-red-950/40 px-4 py-2.5 text-sm text-red-300">{error}</p>
+              )}
+
+              {/* Results */}
+              {data && (
+                <div className="space-y-4 animate-in fade-in">
+                  {data.recommendation ? (
+                    <>
+                      <div>
+                        <p className="text-[10px] font-semibold tracking-[0.15em] text-zinc-500 uppercase mb-3">AI Cross-Sell Opportunity</p>
+                        <div className="max-w-sm">
+                          <ProductCard
+                            product={{
+                              slug: data.recommendation.slug,
+                              name: data.recommendation.name,
+                              price: data.recommendation.price,
+                              currency: data.recommendation.currency,
+                              stock: 1,
+                              status: "ACTIVE",
+                              description: data.recommendation.description,
+                              attributes: data.recommendation.attributes ?? null,
+                              imageUrl: data.recommendation.imageUrl ?? null,
+                            }}
+                            variant="complement"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4">
+                        <p className="text-[10px] font-semibold tracking-[0.15em] text-zinc-500 uppercase mb-2">Why this product</p>
+                        <p className="text-sm leading-6 text-zinc-300">{data.reason}</p>
+                      </div>
+
+                      <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
+                        <p className="text-[10px] font-semibold tracking-[0.15em] text-zinc-500 uppercase mb-2">Catalog Evidence</p>
+                        <div className="flex flex-wrap gap-2">
+                          <span className="rounded-full border border-emerald-900/50 bg-emerald-950/40 px-3 py-1 text-[11px] text-emerald-300">✓ Compatible</span>
+                          <span className="rounded-full border border-emerald-900/50 bg-emerald-950/40 px-3 py-1 text-[11px] text-emerald-300">✓ In stock</span>
+                          <span className="rounded-full border border-zinc-800 bg-zinc-900 px-3 py-1 text-[11px] text-zinc-400">Relevant category</span>
+                        </div>
+                        <p className="mt-2 text-[10px] text-zinc-600">
+                          Evidence derived from deterministic find_related_products (ACTIVE, stock&gt;0, compatibleWith + category).
+                        </p>
+                      </div>
+
+                      {data.candidates && data.candidates.length > 0 && (
+                        <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4">
+                          <p className="text-[10px] font-semibold tracking-[0.15em] text-zinc-500 uppercase mb-2">Candidates considered</p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {data.candidates.map((c) => (
+                              <span key={c.slug} className="rounded-full border border-zinc-800 bg-zinc-950 px-2.5 py-1 text-[10px] text-zinc-500">
+                                {c.slug}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-5">
+                      <p className="text-sm text-zinc-400">{data.reason}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
-        )}
-      </main>
+        </div>
+
+        {/* Right Context Panel — desktop only */}
+        <div className="hidden lg:flex">
+          <aside className="flex h-full w-56 flex-col border-l border-zinc-800 bg-zinc-950 px-3 py-4 text-xs" aria-label="Context panel">
+            <div className="mb-5">
+              <p className="text-[10px] font-semibold tracking-[0.15em] text-zinc-500 uppercase mb-2">Feature</p>
+              <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-2.5">
+                <p className="text-[11px] font-medium text-zinc-200">Merchant Advisor</p>
+                <p className="text-[10px] text-zinc-500 mt-0.5">Cross-sell intelligence</p>
+              </div>
+            </div>
+            <div className="mb-5">
+              <p className="text-[10px] font-semibold tracking-[0.15em] text-zinc-500 uppercase mb-2">How it works</p>
+              <ul className="space-y-1 text-[11px] text-zinc-500">
+                <li className="flex items-center gap-1.5"><span className="text-zinc-400">1</span> Select a product</li>
+                <li className="flex items-center gap-1.5"><span className="text-zinc-400">2</span> AI finds compatible</li>
+                <li className="flex items-center gap-1.5"><span className="text-zinc-400">3</span> Evidence grounded</li>
+              </ul>
+            </div>
+            <div className="mt-auto border-t border-zinc-800 pt-3">
+              <p className="text-[10px] text-zinc-700">Catalog grounded</p>
+              <p className="text-[10px] text-zinc-700">No fake metrics</p>
+            </div>
+          </aside>
+        </div>
+      </div>
     </div>
   );
 }

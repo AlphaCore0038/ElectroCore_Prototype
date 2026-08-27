@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { ProductCard } from "@/components/product-card";
 import { AIProcessing } from "@/components/ai-processing";
+import { LeftNav } from "@/components/left-nav";
+import { ContextPanel } from "@/components/context-panel";
 
 type Msg = { role: "user" | "assistant"; content: string };
 
@@ -42,6 +44,60 @@ function formatPaise(p: number) {
   return `₹${(p / 100).toFixed(2).replace(/\.00$/, "")}`;
 }
 
+function ComparisonTable({ products, onBuy }: { products: CatalogProduct[]; onBuy: (s: string) => void }) {
+  const a = products[0];
+  const b = products[1];
+  if (!a || !b) return null;
+
+  const allSpecKeys = new Set<string>();
+  [a, b].forEach((p) => {
+    if (p.attributes?.specs) Object.keys(p.attributes.specs).forEach((k) => allSpecKeys.add(k));
+  });
+
+  const rows: { label: string; a: string; b: string }[] = [
+    { label: "Price", a: formatPaise(a.price), b: formatPaise(b.price) },
+    { label: "Availability", a: a.stock > 0 ? "In stock" : "Out of stock", b: b.stock > 0 ? "In stock" : "Out of stock" },
+  ];
+  if (a.attributes?.connectivity || b.attributes?.connectivity) {
+    rows.push({ label: "Connectivity", a: a.attributes?.connectivity || "—", b: b.attributes?.connectivity || "—" });
+  }
+  if (a.attributes?.brand || b.attributes?.brand) {
+    rows.push({ label: "Brand", a: a.attributes?.brand || "—", b: b.attributes?.brand || "—" });
+  }
+  for (const k of allSpecKeys) {
+    rows.push({
+      label: k,
+      a: a.attributes?.specs?.[k] != null ? String(a.attributes.specs[k]) : "—",
+      b: b.attributes?.specs?.[k] != null ? String(b.attributes.specs[k]) : "—",
+    });
+  }
+
+  return (
+    <div className="rounded-xl border border-zinc-800 bg-zinc-900 overflow-hidden">
+      <div className="grid grid-cols-3 border-b border-zinc-800 text-[10px] font-semibold tracking-widest text-zinc-500 uppercase">
+        <div className="px-3 py-2" />
+        <div className="px-3 py-2 text-zinc-300 truncate">{a.attributes?.brand || a.name.split(" ")[0]}</div>
+        <div className="px-3 py-2 text-zinc-300 truncate">{b.attributes?.brand || b.name.split(" ")[0]}</div>
+      </div>
+      {rows.map((r, i) => (
+        <div key={r.label} className={`grid grid-cols-3 text-[11px] ${i < rows.length - 1 ? "border-b border-zinc-800/50" : ""}`}>
+          <div className="px-3 py-2 text-zinc-500 font-medium">{r.label}</div>
+          <div className="px-3 py-2 text-zinc-300">{r.a}</div>
+          <div className="px-3 py-2 text-zinc-300">{r.b}</div>
+        </div>
+      ))}
+      <div className="flex border-t border-zinc-800">
+        <button onClick={() => onBuy(a.slug)} className="flex-1 py-2 text-[11px] font-medium text-zinc-300 hover:bg-zinc-800 transition-colors border-r border-zinc-800">
+          Buy {a.attributes?.brand || a.name.split(" ")[0]}
+        </button>
+        <button onClick={() => onBuy(b.slug)} className="flex-1 py-2 text-[11px] font-medium text-zinc-300 hover:bg-zinc-800 transition-colors">
+          Buy {b.attributes?.brand || b.name.split(" ")[0]}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function Home() {
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
@@ -50,12 +106,11 @@ export default function Home() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const [catalog, setCatalog] = useState<CatalogProduct[]>([]);
+  const [mobileNav, setMobileNav] = useState(false);
 
-  // purchase state
   const [productSlug, setProductSlug] = useState("sony-wh-1000xm5");
   const [purchaseLoading, setPurchaseLoading] = useState(false);
   const [purchaseError, setPurchaseError] = useState<string | null>(null);
-  const [purchaseSuccess, setPurchaseSuccess] = useState<string | null>(null);
   const [intent, setIntent] = useState<{ intentId: string; total: number; unitPrice: number; product: { name: string; slug: string } } | null>(null);
   const [orderId, setOrderId] = useState<string | null>(null);
   const [audit, setAudit] = useState<{ type: string; reason?: string; createdAt: string }[]>([]);
@@ -165,7 +220,6 @@ export default function Home() {
 
   async function handleApproveAndPay() {
     setPurchaseError(null);
-    setPurchaseSuccess(null);
     setOrderId(null);
     setIntent(null);
     setAudit([]);
@@ -248,7 +302,6 @@ export default function Home() {
               return;
             }
             setOrderId(verifyJson.data!.orderId);
-            setPurchaseSuccess(`Payment verified. Order ${verifyJson.data!.orderId} created.`);
           } catch {
             setPurchaseError("Verification error. Please contact support.");
           } finally {
@@ -284,203 +337,264 @@ export default function Home() {
 
   return (
     <div className="flex h-dvh flex-col bg-zinc-950 text-zinc-100">
-      <header className="border-b border-zinc-800 bg-zinc-950">
-        <div className="mx-auto flex w-full max-w-2xl items-center justify-between px-4 py-4 sm:px-6">
-          <div>
-            <p className="text-sm font-semibold tracking-tight text-zinc-100">ElectroCore</p>
-            <p className="text-xs tracking-widest text-zinc-500 uppercase">AI Shopping Assistant</p>
-          </div>
+      {/* Top Bar */}
+      <header className="flex items-center justify-between border-b border-zinc-800 bg-zinc-950 px-4 py-2.5 lg:px-5 shrink-0">
+        <div className="flex items-center gap-3">
+          <button onClick={() => setMobileNav(!mobileNav)} className="lg:hidden text-zinc-400 hover:text-zinc-200 p-1" aria-label="Toggle navigation">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 12h18M3 6h18M3 18h18" /></svg>
+          </button>
           <div className="flex items-center gap-2">
-            <Link href="/merchant" className="rounded-full border border-zinc-800 bg-zinc-900 px-3 py-1 text-xs text-zinc-400 hover:bg-zinc-800">Merchant →</Link>
-            <span className="rounded-full border border-zinc-800 bg-zinc-900 px-3 py-1 text-xs text-zinc-400">Track 01 · Pay</span>
+            <div className="h-6 w-6 rounded-md bg-zinc-800 flex items-center justify-center text-[10px] font-bold text-zinc-300">E</div>
+            <span className="text-sm font-bold tracking-tight text-zinc-100 hidden sm:inline">ElectroCore</span>
           </div>
+          <span className="text-[10px] font-semibold tracking-[0.2em] text-zinc-600 uppercase hidden sm:inline">AI Commerce</span>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <span className="flex items-center gap-1.5 rounded-full bg-zinc-900 border border-zinc-800 px-2.5 py-1 text-[10px] text-zinc-400">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse-dot" />
+            AI ASSISTANT
+          </span>
+          <Link
+            href="/merchant"
+            className="rounded-full border border-zinc-800 bg-zinc-900 px-3 py-1 text-[11px] text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-colors hidden sm:inline"
+          >
+            Merchant Advisor
+          </Link>
         </div>
       </header>
 
-      <main className="flex flex-1 flex-col overflow-hidden">
-        <div className="flex-1 overflow-y-auto">
-          <div className="mx-auto flex w-full max-w-2xl flex-col gap-4 px-4 py-6 sm:px-6">
-            {msgs.length === 0 && !loading && (
-              <div className="py-8 animate-in fade-in">
-                <h1 className="text-2xl font-semibold tracking-tight">What are you shopping for?</h1>
-                <p className="mt-2 text-sm leading-6 text-zinc-400">Ask in plain language. Real products, real prices, real availability from the ElectroCore catalog.</p>
-                <div className="mt-6 grid gap-2">
-                  {[
-                    "What headphones do you have?",
-                    "I need a keyboard under \u20B95,000",
-                    "Is the Logitech MX Master 3S in stock?",
-                    "Tell me about the Sony WH-1000XM5",
-                  ].map((s) => (
-                    <button
-                      key={s}
-                      onClick={() => setInput(s)}
-                      className="rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-3 text-left text-sm text-zinc-300 hover:border-zinc-700 hover:bg-zinc-800 transition-colors"
-                    >
-                      {s}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {msgs.map((m, i) => {
-              const isAssistant = m.role === "assistant";
-              const found = isAssistant && catalog.length ? findProductsInText(m.content) : [];
-              const showComparison = isAssistant && isComparison(m.content, found) && found.length >= 2;
-              const showCard = isAssistant && found.length === 1 && !showComparison;
-              // extract WHY bullets if present in text after recommendation
-              const whyBullets = isAssistant ? m.content.split("\n").filter((l) => l.trim().startsWith("•") || l.trim().startsWith("-") || l.trim().startsWith("✓")).slice(0, 4) : [];
-
-              return (
-                <div key={i} className="flex flex-col gap-3 animate-in fade-in slide-in-from-bottom-1 duration-300">
-                  <div className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
-                    <div className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-6 whitespace-pre-wrap ${m.role === "user" ? "bg-zinc-100 text-zinc-900" : "border border-zinc-800 bg-zinc-900 text-zinc-100"}`}>
-                      {m.content}
-                    </div>
-                  </div>
-
-                  {showCard && found[0] && (
-                    <div className="ml-0 max-w-[85%]">
-                      <ProductCard
-                        product={found[0]}
-                        variant="ai-pick"
-                        onCompare={() => handleCompare(found[0].slug, catalog.find((p) => p.slug !== found[0].slug)?.slug || "jbl-flip-6")}
-                        onBuy={() => handleBuy(found[0].slug)}
-                      />
-                      {whyBullets.length > 0 && (
-                        <div className="mt-2 rounded-xl border border-zinc-800 bg-zinc-900/50 px-3 py-2">
-                          <p className="text-[11px] font-medium tracking-widest text-zinc-500 uppercase">Why this fits</p>
-                          <ul className="mt-1 space-y-1 text-xs leading-5 text-zinc-400">
-                            {whyBullets.map((b, idx) => (
-                              <li key={idx}>{b.trim()}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {showComparison && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {found.slice(0, 2).map((p) => (
-                        <ProductCard key={p.slug} product={p} onBuy={() => handleBuy(p.slug)} />
-                      ))}
-                    </div>
-                  )}
-
-                  {showComparison && (
-                    <div className="rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2">
-                      <p className="text-[11px] font-medium tracking-widest text-zinc-500 uppercase">AI Verdict</p>
-                      <p className="mt-1 text-xs leading-5 text-zinc-400">Grounded comparison above — facts from catalog, reasoning from your request.</p>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-
-            {loading && <AIProcessing />}
-
-            <div ref={bottomRef} />
+      {/* Mobile nav overlay */}
+      {mobileNav && (
+        <div className="lg:hidden border-b border-zinc-800 bg-zinc-950">
+          <div className="px-4 py-3 space-y-1">
+            <Link href="/" onClick={() => setMobileNav(false)} className="block rounded-lg bg-zinc-800 px-3 py-2 text-sm text-zinc-100">AI Shopping</Link>
+            <Link href="/merchant" onClick={() => setMobileNav(false)} className="block rounded-lg px-3 py-2 text-sm text-zinc-400 hover:bg-zinc-900">Merchant Advisor</Link>
           </div>
         </div>
+      )}
 
-        <div className="border-t border-zinc-800 bg-zinc-950">
-          <div className="mx-auto w-full max-w-2xl px-4 py-4 sm:px-6 space-y-3">
-            <div id="purchase-panel" className="rounded-xl border border-zinc-800 bg-zinc-900 p-4 shadow-sm">
-              <p className="text-xs font-medium tracking-widest text-zinc-400 uppercase">Purchase Review</p>
-              <p className="mt-1 text-xs text-zinc-500">Your approval is required. Price is server-calculated.</p>
-              <div className="mt-3 flex gap-2">
-                <select
-                  value={productSlug}
-                  onChange={(e) => setProductSlug(e.target.value)}
-                  className="flex-1 rounded-full border border-zinc-700 bg-zinc-950 px-4 py-2.5 text-sm text-zinc-100 focus:border-zinc-600 focus:outline-none"
-                  aria-label="Select product to purchase"
-                >
-                  {PRODUCTS.map((p) => (
-                    <option key={p.slug} value={p.slug}>
-                      {p.label}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  onClick={handleApproveAndPay}
-                  disabled={purchaseLoading}
-                  className="rounded-full bg-zinc-100 px-6 py-2.5 text-sm font-medium text-zinc-900 hover:bg-white disabled:opacity-40 focus:outline-none focus:ring-2 focus:ring-zinc-300"
-                >
-                  {purchaseLoading ? "Processing…" : "Approve & Pay"}
-                </button>
-              </div>
+      {/* Three-Zone Body */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Left Nav — desktop only */}
+        <div className="hidden lg:flex">
+          <LeftNav activePage="shop" />
+        </div>
 
-              {intent && (
-                <div className="mt-4 rounded-xl border border-zinc-800 bg-zinc-950 p-4">
-                  <p className="text-xs font-medium tracking-widest text-zinc-500 uppercase">Why I&apos;m recommending this</p>
-                  <p className="mt-2 text-sm text-zinc-300">
-                    {intent.product.name} — {formatPaise(intent.unitPrice)} × 1
-                  </p>
-                  <div className="my-3 h-px bg-zinc-800" />
-                  <div className="flex justify-between text-sm">
-                    <span className="text-zinc-400">Total</span>
-                    <span className="font-medium text-zinc-100">{formatPaise(intent.total)}</span>
-                  </div>
-                  <p className="mt-2 flex items-center gap-1.5 text-xs text-zinc-500">
-                    <span className="text-emerald-500">🔒</span> Your approval is required
-                  </p>
-                  <p className="mt-1 text-xs text-zinc-600">Intent {intent.intentId.slice(0, 8)}… expires in 10 min</p>
-                </div>
-              )}
-              {purchaseError && <p className="mt-2 rounded-lg border border-red-900/50 bg-red-950/40 px-3 py-2 text-sm text-red-300">{purchaseError}</p>}
-              {purchaseSuccess && (
-                <div className="mt-3 rounded-xl border border-emerald-900/50 bg-emerald-950/40 p-4">
-                  <p className="text-sm font-medium text-emerald-300">✓ Order Confirmed</p>
-                  <p className="mt-1 text-sm text-emerald-200">{purchaseSuccess}</p>
-                  <p className="mt-2 flex flex-wrap gap-2 text-xs text-emerald-300/80">
-                    <span>✓ Payment verified</span>
-                    <span>✓ Inventory updated</span>
-                  </p>
-                  {orderId && <p className="mt-2 text-xs font-mono text-zinc-400">Order ID: {orderId}</p>}
-                </div>
-              )}
-
-              {orderId && intent && (
-                <div className="mt-3 rounded-xl border border-zinc-800 bg-zinc-950 p-4">
-                  <p className="text-xs font-medium tracking-widest text-zinc-400 uppercase">You might also like</p>
-                  {!postRec && (
-                    <button onClick={() => fetchPostPurchase(intent.product.slug)} disabled={postRecLoading} className="mt-3 rounded-full border border-zinc-700 bg-zinc-900 px-4 py-2 text-xs font-medium text-zinc-300 hover:bg-zinc-800 disabled:opacity-40 focus:outline-none focus:ring-2 focus:ring-zinc-700">
-                      {postRecLoading ? "Finding…" : `Find complement for ${intent.product.name}`}
-                    </button>
-                  )}
-                  {postRec && postRec.recommendation && (
-                    <div className="mt-3">
-                      <ProductCard
-                        product={
-                          catalog.find((p) => p.slug === postRec.recommendation!.slug) || {
-                            slug: postRec.recommendation.slug,
-                            name: postRec.recommendation.name,
-                            price: postRec.recommendation.price,
-                            currency: "INR",
-                            stock: 1,
-                            status: "ACTIVE",
-                            description: postRec.recommendation.description,
-                            attributes: null,
-                            imageUrl: null,
-                          }
-                        }
-                        variant="complement"
-                        onBuy={() => handleBuy(postRec.recommendation!.slug)}
-                      />
-                      <p className="mt-2 text-xs leading-5 text-zinc-400">AI: {postRec.reason}</p>
+        {/* Center — Conversation + Input */}
+        <div className="flex flex-1 flex-col overflow-hidden min-w-0">
+          {/* Messages scroll area */}
+          <div className="flex-1 overflow-y-auto">
+            <div className="mx-auto w-full max-w-3xl px-4 py-6 lg:px-6">
+              {msgs.length === 0 && !loading && (
+                <div className="py-12 animate-in fade-in">
+                  <div className="mb-8">
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="h-8 w-8 rounded-lg bg-zinc-800 flex items-center justify-center text-sm font-bold text-zinc-300">E</div>
+                      <div>
+                        <h1 className="text-xl font-bold tracking-tight">AI Shopping Assistant</h1>
+                        <p className="text-[11px] text-zinc-500">Grounded in the real ElectroCore catalog</p>
+                      </div>
                     </div>
-                  )}
-                  {postRec && !postRec.recommendation && <p className="mt-2 text-xs text-zinc-400">{postRec.reason}</p>}
+                    <p className="text-sm leading-6 text-zinc-400 max-w-lg">
+                      Ask in plain language. Real products, real prices, real availability. The AI reasons over catalog data, recommends the best fit, and completes purchases with your approval.
+                    </p>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    {[
+                      "What headphones do you have?",
+                      "I need a keyboard under ₹5,000",
+                      "Is the Logitech MX Master 3S in stock?",
+                      "Tell me about the Sony WH-1000XM5",
+                    ].map((s) => (
+                      <button
+                        key={s}
+                        onClick={() => setInput(s)}
+                        className="w-full rounded-xl border border-zinc-800 bg-zinc-900/50 px-4 py-2.5 text-left text-sm text-zinc-300 hover:border-zinc-700 hover:bg-zinc-800 transition-colors"
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="mt-8 rounded-xl border border-zinc-800 bg-zinc-900/30 p-4">
+                    <p className="text-[10px] font-semibold tracking-[0.15em] text-zinc-500 uppercase mb-2">How it works</p>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px] text-zinc-500">
+                      <div><span className="text-zinc-300 font-medium">Understand</span><br/>Parse your intent</div>
+                      <div><span className="text-zinc-300 font-medium">Discover</span><br/>Search catalog</div>
+                      <div><span className="text-zinc-300 font-medium">Recommend</span><br/>Best match</div>
+                      <div><span className="text-zinc-300 font-medium">Purchase</span><br/>Your approval</div>
+                    </div>
+                  </div>
                 </div>
               )}
 
+              {msgs.map((m, i) => {
+                const isAssistant = m.role === "assistant";
+                const found = isAssistant && catalog.length ? findProductsInText(m.content) : [];
+                const showComparison = isAssistant && isComparison(m.content, found) && found.length >= 2;
+                const showCard = isAssistant && found.length === 1 && !showComparison;
+                const whyBullets = isAssistant ? m.content.split("\n").filter((l) => l.trim().startsWith("•") || l.trim().startsWith("-") || l.trim().startsWith("✓")).slice(0, 5) : [];
+                const aiVerdict = isAssistant ? m.content.split("\n").filter((l) => /verdict|recommend|best fit|overall|summary/i.test(l)).slice(0, 2).join(" ") : "";
+
+                return (
+                  <div key={i} className="mb-4 animate-in fade-in slide-in-from-bottom duration-300">
+                    {m.role === "user" ? (
+                      <div className="flex justify-end">
+                        <div className="max-w-[80%] rounded-2xl rounded-br-md bg-zinc-100 px-4 py-2.5 text-sm leading-6 text-zinc-900">
+                          {m.content}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        <div className="flex items-start gap-2.5">
+                          <div className="mt-0.5 h-5 w-5 shrink-0 rounded bg-zinc-800 flex items-center justify-center text-[9px] font-bold text-zinc-400">AI</div>
+                          <div className="max-w-[85%] text-sm leading-6 text-zinc-200 whitespace-pre-wrap">{m.content}</div>
+                        </div>
+
+                        {showCard && found[0] && (
+                          <div className="ml-7 max-w-md space-y-2.5">
+                            <ProductCard
+                              product={found[0]}
+                              variant="ai-pick"
+                              onCompare={() => handleCompare(found[0].slug, catalog.find((p) => p.slug !== found[0].slug)?.slug || "jbl-flip-6")}
+                              onBuy={() => handleBuy(found[0].slug)}
+                            />
+                            {whyBullets.length > 0 && (
+                              <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 px-3.5 py-2.5">
+                                <p className="text-[10px] font-semibold tracking-[0.15em] text-zinc-500 uppercase mb-1.5">Why this fits</p>
+                                <ul className="space-y-0.5">
+                                  {whyBullets.map((b, idx) => (
+                                    <li key={idx} className="text-[11px] leading-4.5 text-zinc-400">{b.trim()}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                            {aiVerdict && (
+                              <div className="rounded-xl border border-zinc-800 bg-zinc-950 px-3.5 py-2.5">
+                                <p className="text-[10px] font-semibold tracking-[0.15em] text-zinc-500 uppercase mb-1">AI Verdict</p>
+                                <p className="text-[11px] leading-4.5 text-zinc-400">{aiVerdict}</p>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {showComparison && (
+                          <div className="ml-7 max-w-lg space-y-2.5">
+                            <ComparisonTable products={found.slice(0, 2)} onBuy={handleBuy} />
+                            <div className="rounded-xl border border-zinc-800 bg-zinc-950 px-3.5 py-2.5">
+                              <p className="text-[10px] font-semibold tracking-[0.15em] text-zinc-500 uppercase mb-1">AI Verdict</p>
+                              <p className="text-[11px] leading-4.5 text-zinc-400">Grounded comparison — facts from catalog, reasoning from your request.</p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+              {loading && <AIProcessing />}
+
+              {/* Purchase Review */}
+              {intent && !orderId && (
+                <div id="purchase-panel" className="mt-4 animate-in fade-in">
+                  <div className="rounded-xl border border-zinc-800 bg-zinc-900 overflow-hidden">
+                    <div className="border-b border-zinc-800 px-4 py-2.5">
+                      <p className="text-[10px] font-semibold tracking-[0.15em] text-zinc-500 uppercase">Purchase Review</p>
+                    </div>
+                    <div className="p-4 space-y-3">
+                      <div className="flex items-baseline justify-between">
+                        <p className="text-sm font-semibold text-zinc-100">{intent.product.name}</p>
+                        <p className="text-sm font-bold text-zinc-100">{formatPaise(intent.total)}</p>
+                      </div>
+                      <div className="rounded-lg bg-zinc-950 px-3 py-2">
+                        <p className="text-[10px] font-semibold tracking-[0.15em] text-zinc-500 uppercase mb-1">Why I&apos;m recommending this</p>
+                        <p className="text-[11px] text-zinc-400">{intent.product.name} — server-validated price, ACTIVE status, in stock.</p>
+                      </div>
+                      <div className="h-px bg-zinc-800" />
+                      <div className="flex justify-between text-sm">
+                        <span className="text-zinc-400">Total</span>
+                        <span className="font-bold text-zinc-100">{formatPaise(intent.total)}</span>
+                      </div>
+                      <p className="flex items-center gap-1.5 text-[11px] text-zinc-500">
+                        <span className="text-emerald-500">🔒</span> Your approval is required
+                      </p>
+                      <p className="text-[10px] text-zinc-600">Intent {intent.intentId.slice(0, 8)}… expires in 10 min</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Order Confirmation */}
+              {orderId && (
+                <div className="mt-4 animate-in fade-in">
+                  <div className="rounded-xl border border-emerald-900/50 bg-emerald-950/30 overflow-hidden">
+                    <div className="border-b border-emerald-900/30 px-4 py-2.5">
+                      <p className="text-[10px] font-semibold tracking-[0.15em] text-emerald-400 uppercase">✓ Order Confirmed</p>
+                    </div>
+                    <div className="p-4 space-y-2">
+                      <p className="text-sm font-semibold text-emerald-200">{intent?.product.name}</p>
+                      <p className="text-sm text-emerald-300">{intent ? formatPaise(intent.total) : ""}</p>
+                      <div className="rounded-lg bg-emerald-950/50 px-3 py-2 font-mono text-[11px] text-emerald-400/70">{orderId}</div>
+                      <div className="flex gap-3 text-[11px] text-emerald-400/80">
+                        <span>✓ Payment verified</span>
+                        <span>✓ Inventory updated</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Post-purchase complement */}
+              {orderId && (
+                <div className="mt-4 animate-in fade-in">
+                  <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4">
+                    <p className="text-[10px] font-semibold tracking-[0.15em] text-zinc-500 uppercase mb-2">You might also like</p>
+                    {!postRec && (
+                      <button
+                        onClick={() => fetchPostPurchase(intent!.product.slug)}
+                        disabled={postRecLoading}
+                        className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-1.5 text-[11px] font-medium text-zinc-300 hover:bg-zinc-800 disabled:opacity-40 transition-colors"
+                      >
+                        {postRecLoading ? "Finding…" : `Find complement for ${intent!.product.name}`}
+                      </button>
+                    )}
+                    {postRec?.recommendation && (
+                      <div className="mt-2">
+                        <ProductCard
+                          product={
+                            catalog.find((p) => p.slug === postRec.recommendation!.slug) || {
+                              slug: postRec.recommendation.slug,
+                              name: postRec.recommendation.name,
+                              price: postRec.recommendation.price,
+                              currency: "INR",
+                              stock: 1,
+                              status: "ACTIVE",
+                              description: postRec.recommendation.description,
+                              attributes: null,
+                              imageUrl: null,
+                            }
+                          }
+                          variant="complement"
+                          onBuy={() => handleBuy(postRec.recommendation!.slug)}
+                        />
+                        {postRec.reason && <p className="mt-2 text-[11px] leading-4.5 text-zinc-500">AI: {postRec.reason}</p>}
+                      </div>
+                    )}
+                    {postRec && !postRec.recommendation && <p className="mt-2 text-[11px] text-zinc-500">{postRec.reason}</p>}
+                  </div>
+                </div>
+              )}
+
+              {/* Audit trail */}
               {audit.length > 0 && (
-                <div className="mt-3 border-t border-zinc-800 pt-3">
-                  <p className="text-xs font-medium text-zinc-400">Audit trail</p>
-                  <ul className="mt-1 space-y-1">
+                <div className="mt-4 border-t border-zinc-800 pt-3">
+                  <p className="text-[10px] font-medium text-zinc-500 mb-1">Audit trail</p>
+                  <ul className="space-y-0.5">
                     {audit.map((a, idx) => (
-                      <li key={idx} className="flex justify-between text-xs text-zinc-500">
+                      <li key={idx} className="flex justify-between text-[10px] text-zinc-600">
                         <span>{a.type}{a.reason ? ` — ${a.reason}` : ""}</span>
                         <span>{new Date(a.createdAt).toLocaleTimeString()}</span>
                       </li>
@@ -488,34 +602,74 @@ export default function Home() {
                   </ul>
                 </div>
               )}
-            </div>
 
-            {error && <p className="rounded-xl border border-red-900/50 bg-red-950/40 px-4 py-2 text-sm text-red-300">{error}</p>}
-            <div className="flex gap-2">
-              <input
-                ref={inputRef}
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={onKeyDown}
-                placeholder={"Ask about products — e.g. wireless headphones under ₹3,000"}
-                maxLength={500}
-                disabled={loading}
-                className="flex-1 rounded-full border border-zinc-800 bg-zinc-900 px-4 py-3 text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-zinc-600 focus:outline-none disabled:opacity-50"
-                aria-label="Ask shopping assistant"
-              />
-              <button
-                onClick={send}
-                disabled={loading || input.trim().length === 0}
-                className="rounded-full bg-zinc-100 px-6 py-3 text-sm font-medium text-zinc-900 hover:bg-white disabled:opacity-40 focus:outline-none focus:ring-2 focus:ring-zinc-300"
-                aria-label="Send message"
-              >
-                Send
-              </button>
+              <div ref={bottomRef} />
             </div>
-            <p className="text-xs text-zinc-600">Grounded in the real ElectroCore catalog. Payment via Razorpay test mode. No invented products or prices.</p>
+          </div>
+
+          {/* Purchase Bar — above input */}
+          <div className="border-t border-zinc-800 bg-zinc-950/80 shrink-0">
+            <div className="mx-auto w-full max-w-3xl px-4 py-2 lg:px-6">
+              <div id="purchase-panel" className="flex items-center gap-2">
+                <select
+                  value={productSlug}
+                  onChange={(e) => setProductSlug(e.target.value)}
+                  className="rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-1.5 text-[11px] text-zinc-300 focus:border-zinc-600 focus:outline-none"
+                  aria-label="Select product to purchase"
+                >
+                  {PRODUCTS.map((p) => (
+                    <option key={p.slug} value={p.slug}>{p.label}</option>
+                  ))}
+                </select>
+                <button
+                  onClick={handleApproveAndPay}
+                  disabled={purchaseLoading || !!orderId}
+                  className="rounded-lg bg-zinc-100 px-4 py-1.5 text-[11px] font-medium text-zinc-900 hover:bg-white disabled:opacity-30 focus:outline-none focus:ring-1 focus:ring-zinc-300 transition-colors"
+                >
+                  {purchaseLoading ? "Processing…" : orderId ? "Purchased" : "Approve & Pay"}
+                </button>
+                {purchaseError && <span className="text-[10px] text-red-400 truncate max-w-[200px]">{purchaseError}</span>}
+              </div>
+            </div>
+          </div>
+
+          {/* Input Bar — fixed at bottom of center zone */}
+          <div className="border-t border-zinc-800 bg-zinc-950 shrink-0">
+            <div className="mx-auto w-full max-w-3xl px-4 py-3 lg:px-6">
+              {error && (
+                <p className="mb-2 rounded-lg border border-red-900/50 bg-red-950/40 px-3 py-1.5 text-[11px] text-red-300">{error}</p>
+              )}
+              <div className="flex gap-2">
+                <input
+                  ref={inputRef}
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={onKeyDown}
+                  placeholder="Ask about products — e.g. wireless headphones under ₹30,000"
+                  maxLength={500}
+                  disabled={loading}
+                  className="flex-1 rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-2.5 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-zinc-600 focus:outline-none focus:ring-1 focus:ring-zinc-700 disabled:opacity-50 transition-colors"
+                  aria-label="Ask shopping assistant"
+                />
+                <button
+                  onClick={send}
+                  disabled={loading || input.trim().length === 0}
+                  className="rounded-xl bg-zinc-100 px-5 py-2.5 text-sm font-medium text-zinc-900 hover:bg-white disabled:opacity-30 focus:outline-none focus:ring-2 focus:ring-zinc-300 transition-colors"
+                  aria-label="Send message"
+                >
+                  Send →
+                </button>
+              </div>
+              <p className="mt-1.5 text-[10px] text-zinc-700">Catalog grounded · Payment via Razorpay test mode · No invented products or prices</p>
+            </div>
           </div>
         </div>
-      </main>
+
+        {/* Right Context Panel — desktop only */}
+        <div className="hidden lg:flex">
+          <ContextPanel msgs={msgs} intent={intent} orderId={orderId} postRec={postRec} />
+        </div>
+      </div>
     </div>
   );
 }
