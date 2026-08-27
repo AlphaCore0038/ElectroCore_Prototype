@@ -29,6 +29,22 @@ export async function addMessage(conversationId: string, role: string, content: 
   return msg;
 }
 
+export async function deleteConversation(id: string): Promise<boolean> {
+  const conversation = await prisma.conversation.findUnique({ where: { id }, select: { id: true } });
+  if (!conversation) return false;
+  // Detach any orders referencing this conversation before deleting
+  await prisma.order.updateMany({ where: { conversationId: id }, data: { conversationId: null } });
+  await prisma.conversation.delete({ where: { id } });
+  return true;
+}
+
+export async function clearConversations(): Promise<void> {
+  // Detach all orders from conversations before deleting
+  await prisma.order.updateMany({ where: { conversationId: { not: null } }, data: { conversationId: null } });
+  await prisma.message.deleteMany();
+  await prisma.conversation.deleteMany();
+}
+
 export function generateTitle(content: string): string {
   let t = content.trim();
   t = t.replace(/^(i need|i want|tell me about|show me|find me|can you|could you|please|i'm looking for|i am looking for)\s+/i, "");

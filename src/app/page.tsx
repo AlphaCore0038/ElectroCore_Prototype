@@ -354,6 +354,16 @@ function HomeInner() {
   });
   const shortlistProducts = lastAssistantWithProducts ? deriveShortlist(lastAssistantWithProducts.content, catalog) : [];
 
+  function handleConversationDeleted(deletedId: string) {
+    if (conversationId === deletedId) {
+      setConversationId("");
+      setMsgs([]);
+      if (window.history) {
+        window.history.replaceState(null, "", "/");
+      }
+    }
+  }
+
   return (
     <div className="flex h-dvh flex-col bg-zinc-950 text-zinc-100">
       <TopBar mobileNavOpen={mobileNav} onToggleNav={() => setMobileNav(!mobileNav)} />
@@ -361,7 +371,7 @@ function HomeInner() {
       {/* Three-Zone Body */}
       <div className="flex flex-1 overflow-hidden">
         <div className="hidden lg:flex">
-          <LeftNav />
+          <LeftNav conversationId={conversationId} onConversationDeleted={handleConversationDeleted} />
         </div>
 
         {/* Center */}
