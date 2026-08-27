@@ -861,7 +861,7 @@ Both experiences use the same underlying commerce foundation.
 | Styling | Tailwind CSS 4 |
 | Database | PostgreSQL / Neon |
 | ORM | Prisma 6 |
-| AI Provider | OpenRouter |
+| AI Providers | OpenCode Zen (MiMo 2.5) + OpenRouter (Gemma) |
 | AI Integration | Raw HTTP `fetch` + tool calling |
 | Payments | Razorpay Test Mode |
 | Verification | HMAC-SHA256 |
@@ -885,10 +885,23 @@ The architecture stays deliberately lean.
 src/
 ├── app/
 │   ├── page.tsx
+│   ├── compare/
+│   │   └── page.tsx
 │   ├── merchant/
+│   │   └── page.tsx
+│   ├── orders/
+│   │   └── page.tsx
+│   ├── products/
+│   │   └── page.tsx
+│   ├── recommendations/
 │   │   └── page.tsx
 │   └── api/
 │       ├── ai/
+│       │   ├── chat/
+│       │   ├── conversations/
+│       │   ├── events/
+│       │   ├── orders/
+│       │   └── providers/
 │       ├── audit/
 │       ├── catalog/
 │       ├── merchant/
@@ -896,14 +909,17 @@ src/
 │       └── purchase/
 │
 ├── components/
+│   ├── ai-control.tsx
 │   ├── ai-processing.tsx
+│   ├── comparison-table.tsx
 │   ├── context-panel.tsx
 │   ├── inventory-status.tsx
 │   ├── left-nav.tsx
 │   ├── product-card.tsx
 │   ├── product-quick-view.tsx
 │   ├── purchase-journey.tsx
-│   └── session-activity.tsx
+│   ├── session-activity.tsx
+│   └── top-bar.tsx
 │
 └── lib/
     ├── ai/
@@ -915,6 +931,7 @@ src/
     │
     ├── audit/
     ├── catalog/
+    ├── conversations/
     ├── llm/
     ├── purchase/
     ├── razorpay/
@@ -962,6 +979,10 @@ Configure:
 
 ```env
 DATABASE_URL="postgresql://user:pass@host/db?sslmode=require"
+
+AI_PROVIDER="opencode-zen"
+OPENCODE_ZEN_API_KEY=""
+OPENCODE_ZEN_MODEL="mimo-v2.5-free"
 
 OPENROUTER_API_KEY=""
 OPENROUTER_MODEL="google/gemma-4-31b-it:free"
@@ -1241,12 +1262,89 @@ Expected behavior:
 
 ---
 
+# 🤖 AI Provider Architecture
+
+ElectroCore supports configurable AI providers with a server-side allowlist.
+
+```text
+UI (AI Control Panel)
+        │
+        ▼
+/api/ai/chat
+        │
+        ▼
+Provider Router
+        │
+        ├── OpenCode Zen / MiMo 2.5
+        │       └── mimo-v2.5-free
+        │
+        └── OpenRouter / Gemma
+                └── openrouter-default
+        │
+        ▼
+Tool Orchestration
+        │
+        ├── search_products
+        ├── get_product
+        ├── check_inventory
+        └── find_related_products
+        │
+        ▼
+Catalog / Inventory
+        │
+        ▼
+Grounded AI Response
+```
+
+## Provider Selection
+
+The browser selects from a server-approved allowlist:
+
+```text
+Provider ID          Name        Provider        Model
+─────────────────────────────────────────────────────────
+mimo-v2.5-free       MiMo 2.5    OpenCode Zen    mimo-v2.5-free
+openrouter-default   Gemma       OpenRouter      configured model
+```
+
+## Security
+
+- API credentials remain server-only
+- The browser never receives API keys
+- Provider selection is validated against a server-side allowlist
+- Arbitrary model IDs or endpoints are rejected
+
+## Fallback Behavior
+
+If the primary provider returns a transient error (429/5xx), the system may fall back to the other configured provider.
+
+```text
+Primary: OpenCode Zen → 429 → Fallback: OpenRouter
+Primary: OpenRouter → 5xx → Fallback: OpenCode Zen
+```
+
+## Telemetry
+
+Each AI response includes safe metadata:
+
+```text
+provider      OpenCode Zen
+model         mimo-v2.5-free
+latencyMs     2840
+rounds        2
+toolCalls     3
+fallbackUsed  false
+```
+
+---
+
 # 🔐 Environment & Secret Management
 
 The following values are server-only:
 
 ```text
 DATABASE_URL
+OPENCODE_ZEN_API_KEY
 OPENROUTER_API_KEY
 RAZORPAY_KEY_SECRET
 ```

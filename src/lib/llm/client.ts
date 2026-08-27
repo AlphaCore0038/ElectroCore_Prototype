@@ -8,32 +8,103 @@ export class LLMError extends Error {
   }
 }
 
-export async function chatCompletion(
-  messages: ChatMessage[],
-  tools: ToolDefinition[]
-): Promise<LLMReply> {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  const model = process.env.OPENROUTER_MODEL || "google/gemma-4-31b-it:free";
+type ProviderConfig = {
+  name: string;
+  displayName: string;
+  endpoint: string;
+  apiKey: string;
+  model: string;
+  headers: Record<string, string>;
+};
 
-  if (!apiKey) {
-    throw new LLMError("AI service is not configured.", 500);
-  }
+export type AiTelemetry = {
+  provider: string;
+  model: string;
+  latencyMs: number;
+  rounds: number;
+  toolCalls: number;
+  fallbackUsed: boolean;
+};
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 30_000);
+export type AiCompletionResult = LLMReply & { telemetry: AiTelemetry };
 
-  let res: Response;
-  try {
-    res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
+const PROVIDER_ALLOWLIST: Record<string, (env: NodeJS.ProcessEnv) => ProviderConfig | null> = {
+  "mimo-v2.5-free": (env) => {
+    const apiKey = env.OPENCODE_ZEN_API_KEY;
+    if (!apiKey) return null;
+    return {
+      name: "opencode-zen",
+      displayName: "OpenCode Zen",
+      endpoint: "https://opencode.ai/zen/v1/chat/completions",
+      apiKey,
+      model: env.OPENCODE_ZEN_MODEL || "mimo-v2.5-free",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+    };
+  },
+  "openrouter-default": (env) => {
+    const apiKey = env.OPENROUTER_API_KEY;
+    if (!apiKey) return null;
+    return {
+      name: "openrouter",
+      displayName: "OpenRouter",
+      endpoint: "https://openrouter.ai/api/v1/chat/completions",
+      apiKey,
+      model: env.OPENROUTER_MODEL || "google/gemma-4-31b-it:free",
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
         "HTTP-Referer": "https://electrocore.local",
         "X-Title": "ElectroCore AI Buyer",
       },
+    };
+  },
+};
+
+function getDefaultProvider(env: NodeJS.ProcessEnv): ProviderConfig | null {
+  const providerName = env.AI_PROVIDER || "openrouter";
+  if (providerName === "opencode-zen") {
+    return PROVIDER_ALLOWLIST["mimo-v2.5-free"](env);
+  }
+  return PROVIDER_ALLOWLIST["openrouter-default"](env);
+}
+
+export function getAvailableProviders(): { id: string; name: string; provider: string; model: string; configured: boolean }[] {
+  return [
+    {
+      id: "mimo-v2.5-free",
+      name: "MiMo 2.5",
+      provider: "OpenCode Zen",
+      model: process.env.OPENCODE_ZEN_MODEL || "mimo-v2.5-free",
+      configured: !!process.env.OPENCODE_ZEN_API_KEY,
+    },
+    {
+      id: "openrouter-default",
+      name: "Gemma",
+      provider: "OpenRouter",
+      model: process.env.OPENROUTER_MODEL || "google/gemma-4-31b-it:free",
+      configured: !!process.env.OPENROUTER_API_KEY,
+    },
+  ];
+}
+
+async function callProvider(
+  provider: ProviderConfig,
+  messages: ChatMessage[],
+  tools: ToolDefinition[]
+): Promise<LLMReply> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30_000);
+
+  let res: Response;
+  try {
+    res = await fetch(provider.endpoint, {
+      method: "POST",
+      headers: provider.headers,
       body: JSON.stringify({
-        model,
+        model: provider.model,
         messages,
         tools,
         tool_choice: "auto",
@@ -51,14 +122,11 @@ export async function chatCompletion(
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    console.error("OpenRouter error", res.status, text.slice(0, 500));
-    if (res.status === 401 || res.status === 403) {
-      throw new LLMError("AI service is not configured.", 500);
-    }
-    if (res.status === 429) {
-      throw new LLMError("AI service is busy. Please try again.", 502);
-    }
-    throw new LLMError("AI service is temporarily unavailable.", 502);
+    console.error(`[ai] provider=${provider.name} error ${res.status}`, text.slice(0, 300));
+    throw new LLMError(
+      res.status === 429 ? "AI service is busy." : "AI service is temporarily unavailable.",
+      res.status
+    );
   }
 
   let json: unknown;
@@ -107,4 +175,64 @@ export async function chatCompletion(
   }
 
   return { content: content ?? null, tool_calls };
+}
+
+function isTransientError(err: unknown): boolean {
+  if (err instanceof LLMError) {
+    return err.status === 429 || err.status >= 500;
+  }
+  return false;
+}
+
+export async function chatCompletion(
+  messages: ChatMessage[],
+  tools: ToolDefinition[],
+  providerId?: string
+): Promise<AiCompletionResult> {
+  const start = performance.now();
+  let fallbackUsed = false;
+
+  // Resolve provider
+  let primary: ProviderConfig | null = null;
+
+  if (providerId && PROVIDER_ALLOWLIST[providerId]) {
+    primary = PROVIDER_ALLOWLIST[providerId](process.env);
+  }
+
+  if (!primary) {
+    primary = getDefaultProvider(process.env);
+  }
+
+  if (!primary) {
+    // Try fallback
+    const fallbackId = providerId === "mimo-v2.5-free" ? "openrouter-default" : "mimo-v2.5-free";
+    const fallback = PROVIDER_ALLOWLIST[fallbackId]?.(process.env);
+    if (!fallback) {
+      throw new LLMError("AI service is not configured.", 500);
+    }
+    console.log(`[ai] provider=${fallback.displayName} model=${fallback.model} (primary not configured)`);
+    const result = await callProvider(fallback, messages, tools);
+    const latencyMs = Math.round(performance.now() - start);
+    return { ...result, telemetry: { provider: fallback.displayName, model: fallback.model, latencyMs, rounds: 1, toolCalls: 0, fallbackUsed: true } };
+  }
+
+  console.log(`[ai] provider=${primary.displayName} model=${primary.model}`);
+
+  try {
+    const result = await callProvider(primary, messages, tools);
+    const latencyMs = Math.round(performance.now() - start);
+    return { ...result, telemetry: { provider: primary.displayName, model: primary.model, latencyMs, rounds: 1, toolCalls: 0, fallbackUsed } };
+  } catch (err) {
+    if (!isTransientError(err)) throw err;
+
+    const fallbackId = primary.name === "opencode-zen" ? "openrouter-default" : "mimo-v2.5-free";
+    const fallback = PROVIDER_ALLOWLIST[fallbackId]?.(process.env);
+    if (!fallback) throw err;
+
+    console.log(`[ai] provider=${primary.displayName} failed, falling back to ${fallback.displayName}`);
+    fallbackUsed = true;
+    const result = await callProvider(fallback, messages, tools);
+    const latencyMs = Math.round(performance.now() - start);
+    return { ...result, telemetry: { provider: fallback.displayName, model: fallback.model, latencyMs, rounds: 1, toolCalls: 0, fallbackUsed } };
+  }
 }

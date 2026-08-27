@@ -18,6 +18,11 @@ export type StoredEvent = {
   total?: number;
   currency?: string;
   reason?: string;
+  provider?: string;
+  model?: string;
+  latencyMs?: number;
+  rounds?: number;
+  toolCalls?: number;
   metadata?: Record<string, unknown>;
 };
 

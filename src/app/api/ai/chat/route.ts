@@ -12,6 +12,8 @@ const MAX_ROUNDS = 8;
 const MAX_HISTORY = 50;
 const MAX_MESSAGE = 500;
 
+const ALLOWED_PROVIDER_IDS = ["mimo-v2.5-free", "openrouter-default"];
+
 function bad(message: string, status = 400) {
   return NextResponse.json({ ok: false, error: "BAD_REQUEST", message }, { status });
 }
@@ -24,7 +26,7 @@ export async function POST(request: Request) {
     return bad("Invalid JSON");
   }
 
-  const b = body as { message?: unknown; history?: unknown; conversationId?: unknown };
+  const b = body as { message?: unknown; history?: unknown; conversationId?: unknown; providerId?: unknown };
 
   if (typeof b.message !== "string") {
     return bad("Message is required.");
@@ -35,6 +37,16 @@ export async function POST(request: Request) {
   }
   if (message.length > MAX_MESSAGE) {
     return bad(`Message must be at most ${MAX_MESSAGE} characters`);
+  }
+
+  // Validate providerId against allowlist
+  let providerId: string | undefined;
+  if (typeof b.providerId === "string" && b.providerId.trim()) {
+    const pid = b.providerId.trim();
+    if (!ALLOWED_PROVIDER_IDS.includes(pid)) {
+      return bad("Invalid provider.");
+    }
+    providerId = pid;
   }
 
   const history: { role: "user" | "assistant"; content: string }[] = [];
@@ -65,7 +77,6 @@ export async function POST(request: Request) {
       if (content.trim().length > 2000) {
         return bad("Invalid conversation format.");
       }
-      // reject tool/system injection: ensure no extra fields
       const extra = Object.keys(item as object).some((k) => k !== "role" && k !== "content");
       if (extra) {
         return bad("Invalid conversation format.");
@@ -89,7 +100,6 @@ export async function POST(request: Request) {
     isNewConversation = true;
   }
 
-  // Persist user message
   await addMessage(conversationId, "user", message);
   appendEvent({ type: "CHAT_MESSAGE", conversationId, role: "user", content: message.slice(0, 100) });
 
@@ -101,56 +111,70 @@ export async function POST(request: Request) {
 
   console.log(`[ai] request: "${message.slice(0, 80)}" history=${history.length}`);
 
+  const start = performance.now();
+  let totalToolCalls = 0;
+  let rounds = 0;
+  let lastTelemetry = { provider: "", model: "", latencyMs: 0, fallbackUsed: false };
+
   try {
     for (let round = 0; round < MAX_ROUNDS; round++) {
-      const reply = await chatCompletion(messages, toolDefinitions);
+      rounds = round + 1;
+      const result = await chatCompletion(messages, toolDefinitions, providerId);
+      lastTelemetry = { provider: result.telemetry.provider, model: result.telemetry.model, latencyMs: result.telemetry.latencyMs, fallbackUsed: result.telemetry.fallbackUsed };
 
-      const hasTools = reply.tool_calls && reply.tool_calls.length > 0;
+      const hasTools = result.tool_calls && result.tool_calls.length > 0;
 
       if (!hasTools) {
-        const final = reply.content?.trim() || "I could not find a suitable product for that request.";
-        console.log(`[ai] done in ${round + 1} rounds`);
-        // Persist assistant response
+        const final = result.content?.trim() || "I could not find a suitable product for that request.";
+        console.log(`[ai] done in ${rounds} rounds`);
         await addMessage(conversationId, "assistant", final);
-        appendEvent({ type: "AI_RESPONSE", conversationId, content: final.slice(0, 100) });
-        return NextResponse.json({ ok: true, data: { message: { role: "assistant", content: final }, conversationId, isNewConversation } });
+
+        const totalLatencyMs = Math.round(performance.now() - start);
+        const ai = { ...lastTelemetry, latencyMs: totalLatencyMs, rounds, toolCalls: totalToolCalls };
+
+        appendEvent({ type: "AI_RESPONSE", conversationId, content: final.slice(0, 100), provider: ai.provider, model: ai.model, latencyMs: ai.latencyMs, rounds: ai.rounds, toolCalls: ai.toolCalls });
+
+        return NextResponse.json({ ok: true, data: { message: { role: "assistant", content: final }, conversationId, isNewConversation, ai } });
       }
 
       messages.push({
         role: "assistant",
-        content: reply.content ?? null,
-        tool_calls: reply.tool_calls!,
+        content: result.content ?? null,
+        tool_calls: result.tool_calls!,
       });
 
-      for (const tc of reply.tool_calls!) {
+      for (const tc of result.tool_calls!) {
         const name = tc.function.name;
         const args = tc.function.arguments;
+        totalToolCalls++;
         console.log(`[ai] tool ${name} ${args.slice(0, 120)}`);
         appendEvent({ type: "TOOL_REQUEST", conversationId, tool: name });
-        let result: string;
+        let toolResult: string;
         try {
-          result = await executeTool(name, args);
+          toolResult = await executeTool(name, args);
         } catch (e) {
           console.error(`[ai] tool ${name} threw`, e);
-          result = JSON.stringify({ ok: false, error: "INTERNAL_ERROR", message: "Tool failed" });
+          toolResult = JSON.stringify({ ok: false, error: "INTERNAL_ERROR", message: "Tool failed" });
         }
         console.log(`[ai] tool ${name} done`);
         messages.push({
           role: "tool",
           tool_call_id: tc.id,
-          content: result,
+          content: toolResult,
         });
       }
     }
 
     const fallback = "I'm having trouble completing this request right now. Please try a simpler question.";
     await addMessage(conversationId, "assistant", fallback);
+    const totalLatencyMs = Math.round(performance.now() - start);
     return NextResponse.json({
       ok: true,
       data: {
         message: { role: "assistant", content: fallback },
         conversationId,
         isNewConversation,
+        ai: { ...lastTelemetry, latencyMs: totalLatencyMs, rounds, toolCalls: totalToolCalls },
       },
     });
   } catch (err) {

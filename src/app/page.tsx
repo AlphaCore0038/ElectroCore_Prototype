@@ -7,6 +7,7 @@ import { AIProcessing } from "@/components/ai-processing";
 import { LeftNav } from "@/components/left-nav";
 import { TopBar } from "@/components/top-bar";
 import { ContextPanel } from "@/components/context-panel";
+import { AIControl, type AiTelemetryData } from "@/components/ai-control";
 import { ProductQuickView } from "@/components/product-quick-view";
 import { PurchaseJourney } from "@/components/purchase-journey";
 import { InventoryStatus } from "@/components/inventory-status";
@@ -109,6 +110,8 @@ function HomeInner() {
   const [postRecLoading, setPostRecLoading] = useState(false);
 
   const [quickView, setQuickView] = useState<{ product: CatalogProduct; reasoning?: string } | null>(null);
+  const [selectedProvider, setSelectedProvider] = useState("mimo-v2.5-free");
+  const [telemetry, setTelemetry] = useState<AiTelemetryData>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -157,11 +160,11 @@ function HomeInner() {
       const res = await fetch("/api/ai/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, history: msgs, conversationId: conversationId || undefined }),
+        body: JSON.stringify({ message: text, history: msgs, conversationId: conversationId || undefined, providerId: selectedProvider }),
       });
       const json = (await res.json()) as {
         ok: boolean;
-        data?: { message?: { content?: string }; conversationId?: string; isNewConversation?: boolean };
+        data?: { message?: { content?: string }; conversationId?: string; isNewConversation?: boolean; ai?: { provider: string; model: string; latencyMs: number; rounds: number; toolCalls: number; fallbackUsed: boolean } };
         error?: string;
         message?: string;
       };
@@ -177,6 +180,9 @@ function HomeInner() {
         return;
       }
       setMsgs([...nextMsgs, { role: "assistant", content: reply }]);
+      if (json.data?.ai) {
+        setTelemetry(json.data.ai);
+      }
       if (json.data?.conversationId) {
         setConversationId(json.data.conversationId);
         if (json.data.isNewConversation && window.history) {
@@ -700,6 +706,13 @@ function HomeInner() {
             </div>
           </div>
 
+          {/* ═══════ MOBILE AI CONTROL ═══════ */}
+          <div className="lg:hidden border-t border-zinc-800 bg-zinc-950 shrink-0">
+            <div className="mx-auto w-full max-w-3xl px-4 py-2 lg:px-6">
+              <AIControl selectedProvider={selectedProvider} onSelectProvider={setSelectedProvider} telemetry={telemetry} loading={loading} />
+            </div>
+          </div>
+
           {/* ═══════ PURCHASE BAR ═══════ */}
           <div className="border-t border-zinc-800 bg-zinc-950/80 shrink-0">
             <div className="mx-auto w-full max-w-3xl px-4 py-2 lg:px-6">
@@ -775,7 +788,7 @@ function HomeInner() {
 
         {/* Right Context Panel */}
         <div className="hidden lg:flex">
-          <ContextPanel msgs={msgs} intent={intent} orderId={orderId} postRec={postRec} catalogCount={catalog.length} purchaseLoading={purchaseLoading} />
+          <ContextPanel msgs={msgs} intent={intent} orderId={orderId} postRec={postRec} catalogCount={catalog.length} purchaseLoading={purchaseLoading} selectedProvider={selectedProvider} onSelectProvider={setSelectedProvider} telemetry={telemetry} aiLoading={loading} />
         </div>
       </div>
 

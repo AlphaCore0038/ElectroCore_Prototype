@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import { SessionActivity } from "@/components/session-activity";
+import { AIControl, type AiTelemetryData } from "@/components/ai-control";
 
 type Msg = { role: "user" | "assistant"; content: string };
 
@@ -63,6 +64,10 @@ export function ContextPanel({
   postRec,
   catalogCount,
   purchaseLoading,
+  selectedProvider,
+  onSelectProvider,
+  telemetry,
+  aiLoading,
 }: {
   msgs: Msg[];
   intent: Intent;
@@ -70,6 +75,10 @@ export function ContextPanel({
   postRec: PostRec;
   catalogCount: number;
   purchaseLoading?: boolean;
+  selectedProvider: string;
+  onSelectProvider: (id: string) => void;
+  telemetry: AiTelemetryData;
+  aiLoading: boolean;
 }) {
   const requestTags = useMemo(() => deriveRequest(msgs), [msgs]);
   const steps = useMemo(() => deriveJourney(msgs, intent, orderId), [msgs, intent, orderId]);
@@ -80,9 +89,8 @@ export function ContextPanel({
   if (!hasConversation && !intent && !orderId) {
     return (
       <aside className="flex h-full w-56 flex-col border-l border-zinc-800 bg-zinc-950 px-3 py-4 text-xs overflow-y-auto" aria-label="Context panel">
-        <div className="mb-5">
-          <p className="text-[10px] font-semibold tracking-[0.15em] text-zinc-500 uppercase mb-2">AI Commerce</p>
-          <p className="text-[11px] text-zinc-400">Ready to help.</p>
+        <div className="mb-4">
+          <AIControl selectedProvider={selectedProvider} onSelectProvider={onSelectProvider} telemetry={telemetry} loading={aiLoading} />
         </div>
 
         <div className="mb-5">
@@ -113,6 +121,10 @@ export function ContextPanel({
   if (hasConversation && !intent && !orderId) {
     return (
       <aside className="flex h-full w-56 flex-col border-l border-zinc-800 bg-zinc-950 px-3 py-4 text-xs overflow-y-auto" aria-label="Context panel">
+        <div className="mb-4">
+          <AIControl selectedProvider={selectedProvider} onSelectProvider={onSelectProvider} telemetry={telemetry} loading={aiLoading} />
+        </div>
+
         <div className="mb-5">
           <p className="text-[10px] font-semibold tracking-[0.15em] text-zinc-500 uppercase mb-2">Current Request</p>
           {requestTags.length === 0 ? (
@@ -126,20 +138,6 @@ export function ContextPanel({
               ))}
             </div>
           )}
-        </div>
-
-        <div className="mb-5">
-          <p className="text-[10px] font-semibold tracking-[0.15em] text-zinc-500 uppercase mb-2">Evaluation</p>
-          <ul className="space-y-1.5 text-[11px]">
-            <li className="flex items-center gap-1.5">
-              <span className={`h-1.5 w-1.5 rounded-full ${msgs.some((m) => m.role === "assistant") ? "bg-emerald-500" : "bg-zinc-700"}`} />
-              <span className={msgs.some((m) => m.role === "assistant") ? "text-zinc-300" : "text-zinc-600"}>Products considered</span>
-            </li>
-            <li className="flex items-center gap-1.5">
-              <span className={`h-1.5 w-1.5 rounded-full ${msgs.some((m) => m.role === "assistant" && /price|₹|\bstock\b/i.test(m.content)) ? "bg-emerald-500" : "bg-zinc-700"}`} />
-              <span className={msgs.some((m) => m.role === "assistant" && /price|₹|\bstock\b/i.test(m.content)) ? "text-zinc-300" : "text-zinc-600"}>Recommendation</span>
-            </li>
-          </ul>
         </div>
 
         <div className="mb-5">
@@ -172,6 +170,10 @@ export function ContextPanel({
   if (intent && !orderId) {
     return (
       <aside className="flex h-full w-56 flex-col border-l border-zinc-800 bg-zinc-950 px-3 py-4 text-xs overflow-y-auto" aria-label="Context panel">
+        <div className="mb-4">
+          <AIControl selectedProvider={selectedProvider} onSelectProvider={onSelectProvider} telemetry={telemetry} loading={aiLoading} />
+        </div>
+
         <div className="mb-5">
           <p className="text-[10px] font-semibold tracking-[0.15em] text-zinc-500 uppercase mb-2">Purchase</p>
           <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-2.5">
@@ -231,6 +233,10 @@ export function ContextPanel({
   // State D: after purchase
   return (
     <aside className="flex h-full w-56 flex-col border-l border-zinc-800 bg-zinc-950 px-3 py-4 text-xs overflow-y-auto" aria-label="Context panel">
+      <div className="mb-4">
+        <AIControl selectedProvider={selectedProvider} onSelectProvider={onSelectProvider} telemetry={telemetry} loading={aiLoading} />
+      </div>
+
       <div className="mb-5">
         <p className="text-[10px] font-semibold tracking-[0.15em] text-zinc-500 uppercase mb-2">Order Confirmed</p>
         <div className="rounded-lg border border-emerald-900/50 bg-emerald-950/30 p-2.5 space-y-1">
