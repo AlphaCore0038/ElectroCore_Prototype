@@ -6,6 +6,9 @@ import { ProductCard } from "@/components/product-card";
 import { AIProcessing } from "@/components/ai-processing";
 import { LeftNav } from "@/components/left-nav";
 import { ContextPanel } from "@/components/context-panel";
+import { ProductQuickView } from "@/components/product-quick-view";
+import { PurchaseJourney } from "@/components/purchase-journey";
+import { InventoryStatus } from "@/components/inventory-status";
 
 type Msg = { role: "user" | "assistant"; content: string };
 
@@ -44,7 +47,53 @@ function formatPaise(p: number) {
   return `₹${(p / 100).toFixed(2).replace(/\.00$/, "")}`;
 }
 
-function ComparisonTable({ products, onBuy }: { products: CatalogProduct[]; onBuy: (s: string) => void }) {
+function deriveShoppingBrief(msgs: Msg[]): { category: string | null; budget: string | null; preferences: string[]; requirementCount: number } | null {
+  const lastUser = [...msgs].reverse().find((m) => m.role === "user");
+  if (!lastUser) return null;
+  const text = lastUser.content.toLowerCase();
+
+  let category: string | null = null;
+  if (text.includes("headphone") || text.includes("headset") || text.includes("earphone")) category = "Headphones / Audio";
+  else if (text.includes("keyboard") || text.includes("mouse") || text.includes("keychron") || text.includes("logitech mx")) category = "Keyboard / Peripherals";
+  else if (text.includes("cable") || text.includes("charger") || text.includes("power") || text.includes("hub")) category = "Accessories";
+  else if (text.includes("speaker") || text.includes("bluetooth speaker")) category = "Speaker";
+  else if (text.includes("storage") || text.includes("ssd") || text.includes("drive") || text.includes("t7")) category = "Storage";
+  else if (text.includes("sleeve") || text.includes("case") || text.includes("bag")) category = "Protection";
+  else if (text.includes("webcam") || text.includes("camera") || text.includes("brio")) category = "Video";
+
+  if (!category) return null;
+
+  let budget: string | null = null;
+  const priceMatch = text.match(/(?:under|below|max|budget)\s*[\u20b9$₹]*(\d[\d,]*)/);
+  if (priceMatch) budget = `≤ ₹${priceMatch[1]}`;
+
+  const preferences: string[] = [];
+  if (text.includes("wireless") || text.includes("bluetooth")) preferences.push("Wireless");
+  if (text.includes("wired") || text.includes("usb-c")) preferences.push("Wired");
+  if (text.includes("travel") || text.includes("portable")) preferences.push("Portable");
+  if (text.includes("gaming")) preferences.push("Gaming");
+
+  const requirementCount = (category ? 1 : 0) + (budget ? 1 : 0) + preferences.length;
+  if (requirementCount < 1) return null;
+
+  return { category, budget, preferences, requirementCount };
+}
+
+function deriveCommandActions(msgs: Msg[], hasRecommendation: boolean, hasOrder: boolean): string[] {
+  if (hasOrder) return ["Find a complement", "Continue shopping"];
+  if (hasRecommendation) return ["Compare alternatives", "Why this one?", "Find cheaper", "Check availability"];
+  if (msgs.length > 0) return ["Compare products", "Check availability", "Find recommendations"];
+  return ["Find headphones", "Compare products", "Check availability", "Find a complement"];
+}
+
+function deriveShortlist(text: string, catalog: CatalogProduct[]): CatalogProduct[] {
+  const lower = text.toLowerCase();
+  const found = catalog.filter((p) => lower.includes(p.slug.toLowerCase()) || lower.includes(p.name.toLowerCase()));
+  return found.slice(0, 3);
+}
+
+// ── Advanced Comparison Table ──
+function ComparisonTable({ products, onBuy, onView }: { products: CatalogProduct[]; onBuy: (s: string) => void; onView: (p: CatalogProduct, r?: string) => void }) {
   const a = products[0];
   const b = products[1];
   if (!a || !b) return null;
@@ -54,41 +103,55 @@ function ComparisonTable({ products, onBuy }: { products: CatalogProduct[]; onBu
     if (p.attributes?.specs) Object.keys(p.attributes.specs).forEach((k) => allSpecKeys.add(k));
   });
 
+  const isDiff = (va: string, vb: string) => va !== vb && va !== "—" && vb !== "—";
+
   const rows: { label: string; a: string; b: string }[] = [
-    { label: "Price", a: formatPaise(a.price), b: formatPaise(b.price) },
-    { label: "Availability", a: a.stock > 0 ? "In stock" : "Out of stock", b: b.stock > 0 ? "In stock" : "Out of stock" },
+    { label: "PRICE", a: formatPaise(a.price), b: formatPaise(b.price) },
+    { label: "AVAILABILITY", a: a.stock > 0 ? `● In stock (${a.stock})` : "○ Out of stock", b: b.stock > 0 ? `● In stock (${b.stock})` : "○ Out of stock" },
   ];
   if (a.attributes?.connectivity || b.attributes?.connectivity) {
-    rows.push({ label: "Connectivity", a: a.attributes?.connectivity || "—", b: b.attributes?.connectivity || "—" });
+    rows.push({ label: "CONNECTIVITY", a: a.attributes?.connectivity || "Not available", b: b.attributes?.connectivity || "Not available" });
   }
   if (a.attributes?.brand || b.attributes?.brand) {
-    rows.push({ label: "Brand", a: a.attributes?.brand || "—", b: b.attributes?.brand || "—" });
+    rows.push({ label: "BRAND", a: a.attributes?.brand || "Not available", b: b.attributes?.brand || "Not available" });
   }
   for (const k of allSpecKeys) {
     rows.push({
-      label: k,
-      a: a.attributes?.specs?.[k] != null ? String(a.attributes.specs[k]) : "—",
-      b: b.attributes?.specs?.[k] != null ? String(b.attributes.specs[k]) : "—",
+      label: k.toUpperCase(),
+      a: a.attributes?.specs?.[k] != null ? String(a.attributes.specs[k]) : "Not available",
+      b: b.attributes?.specs?.[k] != null ? String(b.attributes.specs[k]) : "Not available",
     });
   }
 
   return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-900 overflow-hidden">
+    <div className="rounded-xl border border-zinc-800 bg-zinc-900 overflow-hidden hover-glow">
+      <div className="border-b border-zinc-800 px-4 py-2.5">
+        <p className="text-[10px] font-semibold tracking-[0.15em] text-zinc-500 uppercase">Product Comparison</p>
+      </div>
       <div className="grid grid-cols-3 border-b border-zinc-800 text-[10px] font-semibold tracking-widest text-zinc-500 uppercase">
         <div className="px-3 py-2" />
         <div className="px-3 py-2 text-zinc-300 truncate">{a.attributes?.brand || a.name.split(" ")[0]}</div>
         <div className="px-3 py-2 text-zinc-300 truncate">{b.attributes?.brand || b.name.split(" ")[0]}</div>
       </div>
-      {rows.map((r, i) => (
-        <div key={r.label} className={`grid grid-cols-3 text-[11px] ${i < rows.length - 1 ? "border-b border-zinc-800/50" : ""}`}>
-          <div className="px-3 py-2 text-zinc-500 font-medium">{r.label}</div>
-          <div className="px-3 py-2 text-zinc-300">{r.a}</div>
-          <div className="px-3 py-2 text-zinc-300">{r.b}</div>
-        </div>
-      ))}
+      {rows.map((r, i) => {
+        const diff = isDiff(r.a, r.b);
+        return (
+          <div key={r.label} className={`grid grid-cols-3 text-[11px] ${i < rows.length - 1 ? "border-b border-zinc-800/50" : ""} ${diff ? "bg-zinc-800/20" : ""}`}>
+            <div className="px-3 py-2 text-zinc-500 font-medium">{r.label}</div>
+            <div className={`px-3 py-2 ${diff ? "text-zinc-100 font-medium" : "text-zinc-400"}`}>{r.a}</div>
+            <div className={`px-3 py-2 ${diff ? "text-zinc-100 font-medium" : "text-zinc-400"}`}>{r.b}</div>
+          </div>
+        );
+      })}
       <div className="flex border-t border-zinc-800">
+        <button onClick={() => onView(a)} className="flex-1 py-2 text-[11px] font-medium text-zinc-400 hover:bg-zinc-800 transition-colors border-r border-zinc-800">
+          View
+        </button>
         <button onClick={() => onBuy(a.slug)} className="flex-1 py-2 text-[11px] font-medium text-zinc-300 hover:bg-zinc-800 transition-colors border-r border-zinc-800">
           Buy {a.attributes?.brand || a.name.split(" ")[0]}
+        </button>
+        <button onClick={() => onView(b)} className="flex-1 py-2 text-[11px] font-medium text-zinc-400 hover:bg-zinc-800 transition-colors border-r border-zinc-800">
+          View
         </button>
         <button onClick={() => onBuy(b.slug)} className="flex-1 py-2 text-[11px] font-medium text-zinc-300 hover:bg-zinc-800 transition-colors">
           Buy {b.attributes?.brand || b.name.split(" ")[0]}
@@ -116,6 +179,8 @@ export default function Home() {
   const [audit, setAudit] = useState<{ type: string; reason?: string; createdAt: string }[]>([]);
   const [postRec, setPostRec] = useState<{ recommendation: { slug: string; name: string; price: number; description: string } | null; reason: string | null } | null>(null);
   const [postRecLoading, setPostRecLoading] = useState(false);
+
+  const [quickView, setQuickView] = useState<{ product: CatalogProduct; reasoning?: string } | null>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -148,8 +213,8 @@ export default function Home() {
     return found.length >= 2 && /compare|vs\.?|versus|difference/i.test(text);
   }
 
-  async function send() {
-    const text = input.trim();
+  async function send(textOverride?: string) {
+    const text = (textOverride ?? input).trim();
     if (!text || loading) return;
     if (text.length > 500) {
       setError("Message must be at most 500 characters.");
@@ -335,6 +400,20 @@ export default function Home() {
     inputRef.current?.focus();
   }
 
+  function handleQuickView(product: CatalogProduct, reasoning?: string) {
+    setQuickView({ product, reasoning });
+  }
+
+  const shoppingBrief = deriveShoppingBrief(msgs);
+  const hasRecommendation = msgs.some((m) => m.role === "assistant" && /price|₹|\bstock\b/i.test(m.content));
+  const commandActions = deriveCommandActions(msgs, hasRecommendation, !!orderId);
+
+  const lastAssistantWithProducts = [...msgs].reverse().find((m) => {
+    if (m.role !== "assistant") return false;
+    return findProductsInText(m.content).length >= 2;
+  });
+  const shortlistProducts = lastAssistantWithProducts ? deriveShortlist(lastAssistantWithProducts.content, catalog) : [];
+
   return (
     <div className="flex h-dvh flex-col bg-zinc-950 text-zinc-100">
       {/* Top Bar */}
@@ -376,67 +455,90 @@ export default function Home() {
 
       {/* Three-Zone Body */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Left Nav — desktop only */}
         <div className="hidden lg:flex">
           <LeftNav activePage="shop" />
         </div>
 
-        {/* Center — Conversation + Input */}
+        {/* Center */}
         <div className="flex flex-1 flex-col overflow-hidden min-w-0">
-          {/* Messages scroll area */}
           <div className="flex-1 overflow-y-auto">
             <div className="mx-auto w-full max-w-3xl px-4 py-6 lg:px-6">
+
+              {/* ═══════ RICH EMPTY STATE ═══════ */}
               {msgs.length === 0 && !loading && (
-                <div className="py-12 animate-in fade-in">
-                  <div className="mb-8">
-                    <div className="flex items-center gap-2 mb-3">
-                      <div className="h-8 w-8 rounded-lg bg-zinc-800 flex items-center justify-center text-sm font-bold text-zinc-300">E</div>
-                      <div>
-                        <h1 className="text-xl font-bold tracking-tight">AI Shopping Assistant</h1>
-                        <p className="text-[11px] text-zinc-500">Grounded in the real ElectroCore catalog</p>
-                      </div>
+                <div className="py-8 animate-in fade-in">
+                  <div className="text-center mb-10">
+                    <div className="inline-flex items-center justify-center h-14 w-14 rounded-2xl bg-zinc-800/80 mb-4 hover-lift">
+                      <span className="text-2xl font-bold text-zinc-300">✦</span>
                     </div>
-                    <p className="text-sm leading-6 text-zinc-400 max-w-lg">
-                      Ask in plain language. Real products, real prices, real availability. The AI reasons over catalog data, recommends the best fit, and completes purchases with your approval.
+                    <h1 className="text-2xl font-bold tracking-tight">ElectroCore</h1>
+                    <p className="mt-1 text-[11px] font-semibold tracking-[0.25em] text-zinc-500 uppercase">AI Commerce Assistant</p>
+                    <p className="mt-3 text-sm leading-6 text-zinc-400 max-w-md mx-auto">
+                      Discover products. Compare options. Make smarter purchases.
                     </p>
                   </div>
 
-                  <div className="space-y-1.5">
+                  <div className="grid grid-cols-2 gap-2.5 mb-8">
                     {[
-                      "What headphones do you have?",
-                      "I need a keyboard under ₹5,000",
-                      "Is the Logitech MX Master 3S in stock?",
-                      "Tell me about the Sony WH-1000XM5",
-                    ].map((s) => (
+                      { label: "Find a product", query: "I need wireless headphones under ₹30,000", icon: "→" },
+                      { label: "Compare products", query: "Compare Sony WH-1000XM5 and JBL Flip 6", icon: "⇄" },
+                      { label: "Check availability", query: "Is the Logitech MX Master 3S in stock?", icon: "◉" },
+                      { label: "Find a complement", query: "What goes well with the Sony WH-1000XM5?", icon: "+" },
+                    ].map((card) => (
                       <button
-                        key={s}
-                        onClick={() => setInput(s)}
-                        className="w-full rounded-xl border border-zinc-800 bg-zinc-900/50 px-4 py-2.5 text-left text-sm text-zinc-300 hover:border-zinc-700 hover:bg-zinc-800 transition-colors"
+                        key={card.label}
+                        onClick={() => send(card.query)}
+                        className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4 text-left hover:border-zinc-700 hover:bg-zinc-800/60 transition-all group hover-lift"
                       >
-                        {s}
+                        <span className="text-[10px] font-semibold tracking-[0.15em] text-zinc-500 uppercase group-hover:text-zinc-400">{card.icon} {card.label}</span>
+                        <p className="mt-2 text-[11px] leading-4.5 text-zinc-500 group-hover:text-zinc-400 line-clamp-2">&quot;{card.query}&quot;</p>
                       </button>
                     ))}
                   </div>
 
-                  <div className="mt-8 rounded-xl border border-zinc-800 bg-zinc-900/30 p-4">
-                    <p className="text-[10px] font-semibold tracking-[0.15em] text-zinc-500 uppercase mb-2">How it works</p>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px] text-zinc-500">
-                      <div><span className="text-zinc-300 font-medium">Understand</span><br/>Parse your intent</div>
-                      <div><span className="text-zinc-300 font-medium">Discover</span><br/>Search catalog</div>
-                      <div><span className="text-zinc-300 font-medium">Recommend</span><br/>Best match</div>
-                      <div><span className="text-zinc-300 font-medium">Purchase</span><br/>Your approval</div>
-                    </div>
+                  <div className="text-center">
+                    <p className="text-[11px] text-zinc-600">Try: &quot;I need wireless headphones under ₹30,000&quot;</p>
                   </div>
                 </div>
               )}
 
+              {/* ═══════ SHOPPING BRIEF ═══════ */}
+              {shoppingBrief && msgs.length > 0 && (
+                <div className="mb-4 rounded-xl border border-zinc-800 bg-zinc-900/50 p-3.5 animate-in fade-in">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-[10px] text-zinc-500">✦</span>
+                    <p className="text-[10px] font-semibold tracking-[0.15em] text-zinc-500 uppercase">Shopping Brief</p>
+                  </div>
+                  <p className="text-sm font-medium text-zinc-200 mb-2">{shoppingBrief.category}</p>
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px]">
+                    {shoppingBrief.budget && (
+                      <span className="text-zinc-500"><span className="text-zinc-400 font-medium">BUDGET</span> {shoppingBrief.budget}</span>
+                    )}
+                    {shoppingBrief.preferences.map((p) => (
+                      <span key={p} className="text-zinc-500"><span className="text-zinc-400 font-medium">PREF</span> {p.toUpperCase()}</span>
+                    ))}
+                  </div>
+                  <p className="mt-2 text-[10px] text-zinc-600">{shoppingBrief.requirementCount} requirements identified</p>
+                </div>
+              )}
+
+              {/* ═══════ MESSAGES ═══════ */}
               {msgs.map((m, i) => {
                 const isAssistant = m.role === "assistant";
                 const found = isAssistant && catalog.length ? findProductsInText(m.content) : [];
                 const showComparison = isAssistant && isComparison(m.content, found) && found.length >= 2;
                 const showCard = isAssistant && found.length === 1 && !showComparison;
-                const whyBullets = isAssistant ? m.content.split("\n").filter((l) => l.trim().startsWith("•") || l.trim().startsWith("-") || l.trim().startsWith("✓")).slice(0, 5) : [];
                 const aiVerdict = isAssistant ? m.content.split("\n").filter((l) => /verdict|recommend|best fit|overall|summary/i.test(l)).slice(0, 2).join(" ") : "";
+
+                const whyNotItems: { name: string; reason: string }[] = [];
+                if (isAssistant && found.length >= 2) {
+                  for (let j = 1; j < Math.min(found.length, 3); j++) {
+                    const p = found[j];
+                    const priceOverBudget = shoppingBrief?.budget ? p.price > parseInt(shoppingBrief.budget.replace(/[≤₹,\s]/g, "")) * 100 : false;
+                    const reason = priceOverBudget ? "Above requested budget" : "Does not match all stated requirements";
+                    whyNotItems.push({ name: p.name, reason });
+                  }
+                }
 
                 return (
                   <div key={i} className="mb-4 animate-in fade-in slide-in-from-bottom duration-300">
@@ -453,40 +555,110 @@ export default function Home() {
                           <div className="max-w-[85%] text-sm leading-6 text-zinc-200 whitespace-pre-wrap">{m.content}</div>
                         </div>
 
+                        {/* Single product recommendation */}
                         {showCard && found[0] && (
                           <div className="ml-7 max-w-md space-y-2.5">
+                            {/* Why This Product */}
+                            <div className="rounded-xl border border-zinc-800 bg-zinc-900 overflow-hidden hover-glow">
+                              <div className="border-b border-zinc-800 px-3.5 py-2">
+                                <p className="text-[10px] font-semibold tracking-[0.15em] text-zinc-500 uppercase">✦ Why This Product</p>
+                              </div>
+                              <div className="p-3.5 space-y-3">
+                                {shoppingBrief && (
+                                  <div>
+                                    <p className="text-[10px] font-semibold tracking-[0.15em] text-zinc-500 uppercase mb-1.5">Your Requirements</p>
+                                    <div className="space-y-0.5">
+                                      {shoppingBrief.budget && <p className="text-[11px] text-zinc-400">✓ {shoppingBrief.budget}</p>}
+                                      {shoppingBrief.preferences.map((p) => (
+                                        <p key={p} className="text-[11px] text-zinc-400">✓ {p}</p>
+                                      ))}
+                                      <p className="text-[11px] text-zinc-400">✓ Currently available</p>
+                                    </div>
+                                  </div>
+                                )}
+                                <div>
+                                  <p className="text-[10px] font-semibold tracking-[0.15em] text-zinc-500 uppercase mb-1.5">Catalog Evidence</p>
+                                  <div className="space-y-0.5">
+                                    <p className="text-[11px] text-zinc-400">{formatPaise(found[0].price)}</p>
+                                    <InventoryStatus stock={found[0].stock} status={found[0].status} />
+                                    {found[0].attributes?.connectivity && <p className="text-[11px] text-zinc-400">{found[0].attributes.connectivity}</p>}
+                                    {found[0].attributes?.brand && <p className="text-[11px] text-zinc-400">{found[0].attributes.brand}</p>}
+                                  </div>
+                                </div>
+                                {aiVerdict && (
+                                  <>
+                                    <div className="h-px bg-zinc-800" />
+                                    <div>
+                                      <p className="text-[10px] font-semibold tracking-[0.15em] text-zinc-500 uppercase mb-1">AI Verdict</p>
+                                      <p className="text-[11px] leading-4.5 text-zinc-400">{aiVerdict}</p>
+                                    </div>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+
                             <ProductCard
                               product={found[0]}
                               variant="ai-pick"
                               onCompare={() => handleCompare(found[0].slug, catalog.find((p) => p.slug !== found[0].slug)?.slug || "jbl-flip-6")}
                               onBuy={() => handleBuy(found[0].slug)}
                             />
-                            {whyBullets.length > 0 && (
-                              <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 px-3.5 py-2.5">
-                                <p className="text-[10px] font-semibold tracking-[0.15em] text-zinc-500 uppercase mb-1.5">Why this fits</p>
-                                <ul className="space-y-0.5">
-                                  {whyBullets.map((b, idx) => (
-                                    <li key={idx} className="text-[11px] leading-4.5 text-zinc-400">{b.trim()}</li>
-                                  ))}
-                                </ul>
-                              </div>
-                            )}
-                            {aiVerdict && (
-                              <div className="rounded-xl border border-zinc-800 bg-zinc-950 px-3.5 py-2.5">
-                                <p className="text-[10px] font-semibold tracking-[0.15em] text-zinc-500 uppercase mb-1">AI Verdict</p>
-                                <p className="text-[11px] leading-4.5 text-zinc-400">{aiVerdict}</p>
-                              </div>
-                            )}
+
+                            <button
+                              onClick={() => handleQuickView(found[0], aiVerdict || undefined)}
+                              className="w-full rounded-lg border border-zinc-800 bg-zinc-900/50 px-3 py-1.5 text-[11px] font-medium text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-colors"
+                            >
+                              View details →
+                            </button>
                           </div>
                         )}
 
+                        {/* Comparison */}
                         {showComparison && (
                           <div className="ml-7 max-w-lg space-y-2.5">
-                            <ComparisonTable products={found.slice(0, 2)} onBuy={handleBuy} />
+                            <ComparisonTable products={found.slice(0, 2)} onBuy={handleBuy} onView={(p, r) => handleQuickView(p, r)} />
                             <div className="rounded-xl border border-zinc-800 bg-zinc-950 px-3.5 py-2.5">
                               <p className="text-[10px] font-semibold tracking-[0.15em] text-zinc-500 uppercase mb-1">AI Verdict</p>
                               <p className="text-[11px] leading-4.5 text-zinc-400">Grounded comparison — facts from catalog, reasoning from your request.</p>
                             </div>
+                          </div>
+                        )}
+
+                        {/* Shortlist */}
+                        {!showComparison && shortlistProducts.length >= 2 && i === msgs.length - 1 && (
+                          <div className="ml-7 space-y-2.5">
+                            <p className="text-[10px] font-semibold tracking-[0.15em] text-zinc-500 uppercase">✦ AI Shortlist</p>
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                              {shortlistProducts.map((p, idx) => (
+                                <div key={p.slug} className="rounded-xl border border-zinc-800 bg-zinc-900 p-3 space-y-1.5 hover-lift">
+                                  <p className="text-[10px] font-semibold tracking-widest text-zinc-500 uppercase">
+                                    {idx === 0 ? "Best Match" : idx === 1 ? "Alternative" : "Option 03"}
+                                  </p>
+                                  <p className="text-[11px] font-medium text-zinc-200 line-clamp-1">{p.name}</p>
+                                  <p className="text-[11px] text-zinc-400">{formatPaise(p.price)}</p>
+                                  <InventoryStatus stock={p.stock} status={p.status} />
+                                  <button
+                                    onClick={() => handleQuickView(p)}
+                                    className="w-full rounded-lg border border-zinc-800 bg-zinc-950 px-2 py-1 text-[10px] font-medium text-zinc-400 hover:bg-zinc-800 transition-colors"
+                                  >
+                                    View
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+
+                            {whyNotItems.length > 0 && (
+                              <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 px-3.5 py-2.5">
+                                <p className="text-[10px] font-semibold tracking-[0.15em] text-zinc-500 uppercase mb-1.5">AI Evaluation</p>
+                                <p className="text-[10px] text-zinc-600 mb-1.5">{found.length} options considered</p>
+                                <div className="space-y-1">
+                                  <p className="text-[11px] text-emerald-400">✓ {found[0].name}</p>
+                                  {whyNotItems.map((item) => (
+                                    <p key={item.name} className="text-[11px] text-zinc-500">○ {item.name} — {item.reason}</p>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
@@ -497,10 +669,10 @@ export default function Home() {
 
               {loading && <AIProcessing />}
 
-              {/* Purchase Review */}
+              {/* ═══════ PURCHASE REVIEW + JOURNEY ═══════ */}
               {intent && !orderId && (
-                <div id="purchase-panel" className="mt-4 animate-in fade-in">
-                  <div className="rounded-xl border border-zinc-800 bg-zinc-900 overflow-hidden">
+                <div id="purchase-panel" className="mt-4 animate-in fade-in space-y-3">
+                  <div className="rounded-xl border border-zinc-800 bg-zinc-900 overflow-hidden hover-glow">
                     <div className="border-b border-zinc-800 px-4 py-2.5">
                       <p className="text-[10px] font-semibold tracking-[0.15em] text-zinc-500 uppercase">Purchase Review</p>
                     </div>
@@ -524,34 +696,45 @@ export default function Home() {
                       <p className="text-[10px] text-zinc-600">Intent {intent.intentId.slice(0, 8)}… expires in 10 min</p>
                     </div>
                   </div>
+                  <PurchaseJourney audit={audit} intent={intent} orderId={orderId} purchaseLoading={purchaseLoading} />
                 </div>
               )}
 
-              {/* Order Confirmation */}
+              {/* ═══════ ORDER RECEIPT ═══════ */}
               {orderId && (
-                <div className="mt-4 animate-in fade-in">
-                  <div className="rounded-xl border border-emerald-900/50 bg-emerald-950/30 overflow-hidden">
-                    <div className="border-b border-emerald-900/30 px-4 py-2.5">
-                      <p className="text-[10px] font-semibold tracking-[0.15em] text-emerald-400 uppercase">✓ Order Confirmed</p>
+                <div className="mt-4 animate-in animate-success">
+                  <div className="rounded-xl border border-emerald-900/50 bg-emerald-950/30 overflow-hidden hover-glow">
+                    <div className="p-6 text-center space-y-3">
+                      <div className="inline-flex items-center justify-center h-12 w-12 rounded-full bg-emerald-500/10 border border-emerald-500/20">
+                        <span className="text-xl text-emerald-500">✓</span>
+                      </div>
+                      <h2 className="text-lg font-bold text-emerald-200 tracking-tight">ORDER CONFIRMED</h2>
+                      <p className="text-sm text-emerald-300">{intent?.product.name}</p>
+                      <p className="text-sm font-bold text-emerald-200">{intent ? formatPaise(intent.total) : ""}</p>
                     </div>
-                    <div className="p-4 space-y-2">
-                      <p className="text-sm font-semibold text-emerald-200">{intent?.product.name}</p>
-                      <p className="text-sm text-emerald-300">{intent ? formatPaise(intent.total) : ""}</p>
-                      <div className="rounded-lg bg-emerald-950/50 px-3 py-2 font-mono text-[11px] text-emerald-400/70">{orderId}</div>
-                      <div className="flex gap-3 text-[11px] text-emerald-400/80">
-                        <span>✓ Payment verified</span>
-                        <span>✓ Inventory updated</span>
+                    <div className="border-t border-emerald-900/30 px-6 py-4 space-y-3">
+                      <div>
+                        <p className="text-[10px] font-semibold tracking-[0.15em] text-emerald-400/60 uppercase mb-1">Order ID</p>
+                        <p className="text-[11px] font-mono text-emerald-400/80 break-all">{orderId}</p>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 text-[11px]">
+                        <div className="flex items-center gap-1.5 text-emerald-400/80">
+                          <span className="text-emerald-500">✓</span> Payment verified
+                        </div>
+                        <div className="flex items-center gap-1.5 text-emerald-400/80">
+                          <span className="text-emerald-500">✓</span> Inventory updated
+                        </div>
                       </div>
                     </div>
                   </div>
                 </div>
               )}
 
-              {/* Post-purchase complement */}
+              {/* ═══════ POST-PURCHASE DISCOVERY ═══════ */}
               {orderId && (
                 <div className="mt-4 animate-in fade-in">
-                  <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4">
-                    <p className="text-[10px] font-semibold tracking-[0.15em] text-zinc-500 uppercase mb-2">You might also like</p>
+                  <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4 hover-glow">
+                    <p className="text-[10px] font-semibold tracking-[0.15em] text-zinc-500 uppercase mb-3">✦ AI Discovery</p>
                     {!postRec && (
                       <button
                         onClick={() => fetchPostPurchase(intent!.product.slug)}
@@ -562,7 +745,8 @@ export default function Home() {
                       </button>
                     )}
                     {postRec?.recommendation && (
-                      <div className="mt-2">
+                      <div className="space-y-3">
+                        <p className="text-[11px] text-zinc-400">You might also like</p>
                         <ProductCard
                           product={
                             catalog.find((p) => p.slug === postRec.recommendation!.slug) || {
@@ -580,7 +764,17 @@ export default function Home() {
                           variant="complement"
                           onBuy={() => handleBuy(postRec.recommendation!.slug)}
                         />
-                        {postRec.reason && <p className="mt-2 text-[11px] leading-4.5 text-zinc-500">AI: {postRec.reason}</p>}
+                        {postRec.reason && (
+                          <div className="rounded-lg bg-zinc-950 px-3 py-2">
+                            <p className="text-[10px] font-semibold tracking-[0.15em] text-zinc-500 uppercase mb-1">Why this product</p>
+                            <p className="text-[11px] leading-4.5 text-zinc-400">{postRec.reason}</p>
+                          </div>
+                        )}
+                        <div className="flex flex-wrap gap-2">
+                          <span className="rounded-full border border-emerald-900/50 bg-emerald-950/40 px-3 py-1 text-[11px] text-emerald-300">✓ Compatible</span>
+                          <span className="rounded-full border border-emerald-900/50 bg-emerald-950/40 px-3 py-1 text-[11px] text-emerald-300">✓ In stock</span>
+                          <span className="rounded-full border border-zinc-800 bg-zinc-900 px-3 py-1 text-[11px] text-zinc-400">Relevant category</span>
+                        </div>
                       </div>
                     )}
                     {postRec && !postRec.recommendation && <p className="mt-2 text-[11px] text-zinc-500">{postRec.reason}</p>}
@@ -607,14 +801,14 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Purchase Bar — above input */}
+          {/* ═══════ PURCHASE BAR ═══════ */}
           <div className="border-t border-zinc-800 bg-zinc-950/80 shrink-0">
             <div className="mx-auto w-full max-w-3xl px-4 py-2 lg:px-6">
               <div id="purchase-panel" className="flex items-center gap-2">
                 <select
                   value={productSlug}
                   onChange={(e) => setProductSlug(e.target.value)}
-                  className="rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-1.5 text-[11px] text-zinc-300 focus:border-zinc-600 focus:outline-none"
+                  className="rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-1.5 text-[11px] text-zinc-300 focus:border-zinc-600 focus:outline-none transition-colors"
                   aria-label="Select product to purchase"
                 >
                   {PRODUCTS.map((p) => (
@@ -633,26 +827,30 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Input Bar — fixed at bottom of center zone */}
+          {/* ═══════ AI COMMAND BAR ═══════ */}
           <div className="border-t border-zinc-800 bg-zinc-950 shrink-0">
-            <div className="mx-auto w-full max-w-3xl px-4 py-3 lg:px-6">
+            <div className="mx-auto w-full max-w-3xl px-4 pt-3 pb-3 lg:px-6">
               {error && (
                 <p className="mb-2 rounded-lg border border-red-900/50 bg-red-950/40 px-3 py-1.5 text-[11px] text-red-300">{error}</p>
               )}
               <div className="flex gap-2">
-                <input
-                  ref={inputRef}
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={onKeyDown}
-                  placeholder="Ask about products — e.g. wireless headphones under ₹30,000"
-                  maxLength={500}
-                  disabled={loading}
-                  className="flex-1 rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-2.5 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-zinc-600 focus:outline-none focus:ring-1 focus:ring-zinc-700 disabled:opacity-50 transition-colors"
-                  aria-label="Ask shopping assistant"
-                />
+                <div className="flex-1 relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] text-zinc-600">✦</span>
+                  <input
+                    ref={inputRef}
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyDown={onKeyDown}
+                    placeholder="Ask ElectroCore anything..."
+                    maxLength={500}
+                    disabled={loading}
+                    className="w-full rounded-xl border border-zinc-800 bg-zinc-900 pl-7 pr-4 py-2.5 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-zinc-600 focus:outline-none focus:ring-1 focus:ring-zinc-700 disabled:opacity-50 transition-colors"
+                    aria-label="Ask shopping assistant"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-zinc-700 hidden sm:inline">⌘ ↵</span>
+                </div>
                 <button
-                  onClick={send}
+                  onClick={() => send()}
                   disabled={loading || input.trim().length === 0}
                   className="rounded-xl bg-zinc-100 px-5 py-2.5 text-sm font-medium text-zinc-900 hover:bg-white disabled:opacity-30 focus:outline-none focus:ring-2 focus:ring-zinc-300 transition-colors"
                   aria-label="Send message"
@@ -660,16 +858,49 @@ export default function Home() {
                   Send →
                 </button>
               </div>
-              <p className="mt-1.5 text-[10px] text-zinc-700">Catalog grounded · Payment via Razorpay test mode · No invented products or prices</p>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {commandActions.map((action) => (
+                  <button
+                    key={action}
+                    onClick={() => send(action)}
+                    className="rounded-full border border-zinc-800 bg-zinc-900/50 px-3 py-1 text-[10px] text-zinc-500 hover:border-zinc-700 hover:text-zinc-300 transition-colors"
+                  >
+                    {action}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-1.5 text-[10px] text-zinc-700">Catalog grounded · Razorpay test mode · No invented products or prices</p>
             </div>
           </div>
         </div>
 
-        {/* Right Context Panel — desktop only */}
+        {/* Right Context Panel */}
         <div className="hidden lg:flex">
-          <ContextPanel msgs={msgs} intent={intent} orderId={orderId} postRec={postRec} />
+          <ContextPanel msgs={msgs} intent={intent} orderId={orderId} postRec={postRec} catalogCount={catalog.length} purchaseLoading={purchaseLoading} />
         </div>
       </div>
+
+      {/* Quick View Modal */}
+      {quickView && (
+        <ProductQuickView
+          product={quickView.product}
+          aiReasoning={quickView.reasoning}
+          onClose={() => setQuickView(null)}
+          onCompare={
+            catalog.length > 1
+              ? () => {
+                  const other = catalog.find((p) => p.slug !== quickView.product.slug);
+                  if (other) handleCompare(quickView.product.slug, other.slug);
+                  setQuickView(null);
+                }
+              : undefined
+          }
+          onBuy={() => {
+            handleBuy(quickView.product.slug);
+            setQuickView(null);
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { ProductCard } from "@/components/product-card";
 import { LeftNav } from "@/components/left-nav";
+import { InventoryStatus } from "@/components/inventory-status";
 
 const PRODUCTS = [
   { slug: "sony-wh-1000xm5", label: "Sony WH-1000XM5 — ₹29,990" },
@@ -28,13 +29,17 @@ type MerchantData = {
     description: string;
     stock?: number;
     status?: string;
-    attributes?: { compatibleWith?: string[]; brand?: string } | null;
+    attributes?: { compatibleWith?: string[]; brand?: string; connectivity?: string; specs?: Record<string, string | number> } | null;
     imageUrl?: string | null;
   } | null;
   reason: string | null;
   source: { name: string; slug: string };
-  candidates?: { slug: string }[];
+  candidates?: { slug: string; stock: number }[];
 };
+
+function formatPaise(p: number) {
+  return `₹${(p / 100).toFixed(2).replace(/\.00$/, "")}`;
+}
 
 export default function MerchantPage() {
   const [product, setProduct] = useState("sony-wh-1000xm5");
@@ -61,6 +66,8 @@ export default function MerchantPage() {
       setLoading(false);
     }
   }
+
+  const selectedProduct = PRODUCTS.find((p) => p.slug === product);
 
   return (
     <div className="flex h-dvh flex-col bg-zinc-950 text-zinc-100">
@@ -103,28 +110,35 @@ export default function MerchantPage() {
 
       {/* Three-Zone Body */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Left Nav — desktop only */}
         <div className="hidden lg:flex">
           <LeftNav activePage="merchant" />
         </div>
 
-        {/* Center — Content */}
+        {/* Center */}
         <div className="flex flex-1 flex-col overflow-hidden min-w-0">
           <div className="flex-1 overflow-y-auto">
             <div className="mx-auto w-full max-w-3xl px-4 py-6 lg:px-6">
-              {/* Hero */}
-              <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-6 mb-6">
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="h-6 w-6 rounded bg-zinc-800 flex items-center justify-center text-[9px] font-bold text-zinc-400">⟡</div>
+
+              {/* ═══════ HERO ═══════ */}
+              <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-6 mb-6 hover-glow">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="inline-flex items-center justify-center h-8 w-8 rounded-xl bg-zinc-800/80">
+                    <span className="text-sm font-bold text-zinc-300">⟡</span>
+                  </div>
                   <p className="text-[10px] font-semibold tracking-[0.2em] text-zinc-500 uppercase">AI Merchant Advisor</p>
                 </div>
                 <h1 className="text-xl font-bold tracking-tight">Turn every purchase into a smarter recommendation.</h1>
                 <p className="mt-2 text-sm leading-6 text-zinc-400 max-w-lg">
-                  AI cross-sell grounded in catalog truth — compatibleWith, category, stock and price. No invented products.
+                  Cross-sell intelligence grounded in catalog truth — compatibleWith, category, stock and price. No invented products, no fake metrics.
                 </p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <span className="rounded-full border border-zinc-800 bg-zinc-950 px-3 py-1 text-[10px] text-zinc-500">Deterministic candidates</span>
+                  <span className="rounded-full border border-zinc-800 bg-zinc-950 px-3 py-1 text-[10px] text-zinc-500">LLM reasoning only on explanation</span>
+                  <span className="rounded-full border border-zinc-800 bg-zinc-950 px-3 py-1 text-[10px] text-zinc-500">Stock-aware</span>
+                </div>
               </div>
 
-              {/* Cross-sell selector */}
+              {/* ═══════ CROSS-SELL SELECTOR ═══════ */}
               <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4 mb-6">
                 <p className="text-[10px] font-semibold tracking-[0.15em] text-zinc-500 uppercase mb-2">Select purchased product</p>
                 <div className="flex gap-2">
@@ -153,13 +167,14 @@ export default function MerchantPage() {
                 <p className="mb-4 rounded-xl border border-red-900/50 bg-red-950/40 px-4 py-2.5 text-sm text-red-300">{error}</p>
               )}
 
-              {/* Results */}
+              {/* ═══════ RESULTS ═══════ */}
               {data && (
                 <div className="space-y-4 animate-in fade-in">
                   {data.recommendation ? (
                     <>
+                      {/* Recommendation card */}
                       <div>
-                        <p className="text-[10px] font-semibold tracking-[0.15em] text-zinc-500 uppercase mb-3">AI Cross-Sell Opportunity</p>
+                        <p className="text-[10px] font-semibold tracking-[0.15em] text-zinc-500 uppercase mb-3">✦ AI Cross-Sell Opportunity</p>
                         <div className="max-w-sm">
                           <ProductCard
                             product={{
@@ -167,8 +182,8 @@ export default function MerchantPage() {
                               name: data.recommendation.name,
                               price: data.recommendation.price,
                               currency: data.recommendation.currency,
-                              stock: 1,
-                              status: "ACTIVE",
+                              stock: data.recommendation.stock ?? 1,
+                              status: data.recommendation.status ?? "ACTIVE",
                               description: data.recommendation.description,
                               attributes: data.recommendation.attributes ?? null,
                               imageUrl: data.recommendation.imageUrl ?? null,
@@ -178,11 +193,48 @@ export default function MerchantPage() {
                         </div>
                       </div>
 
-                      <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4">
-                        <p className="text-[10px] font-semibold tracking-[0.15em] text-zinc-500 uppercase mb-2">Why this product</p>
-                        <p className="text-sm leading-6 text-zinc-300">{data.reason}</p>
+                      {/* Why This Product */}
+                      <div className="rounded-xl border border-zinc-800 bg-zinc-900 overflow-hidden hover-glow">
+                        <div className="border-b border-zinc-800 px-4 py-2.5">
+                          <p className="text-[10px] font-semibold tracking-[0.15em] text-zinc-500 uppercase">Why this product</p>
+                        </div>
+                        <div className="p-4 space-y-3">
+                          <p className="text-sm leading-6 text-zinc-300">{data.reason}</p>
+                          <div className="h-px bg-zinc-800" />
+                          <div className="grid grid-cols-2 gap-3 text-[11px]">
+                            <div>
+                              <p className="text-[10px] font-semibold tracking-[0.15em] text-zinc-500 uppercase mb-1">Source</p>
+                              <p className="text-zinc-300">{data.source.name}</p>
+                              <p className="text-zinc-500">{formatPaise(data.recommendation.price)}</p>
+                            </div>
+                            <div>
+                              <p className="text-[10px] font-semibold tracking-[0.15em] text-zinc-500 uppercase mb-1">Inventory</p>
+                              <InventoryStatus stock={data.recommendation.stock ?? 1} status={data.recommendation.status ?? "ACTIVE"} />
+                            </div>
+                          </div>
+                        </div>
                       </div>
 
+                      {/* Why It Matters */}
+                      <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
+                        <p className="text-[10px] font-semibold tracking-[0.15em] text-zinc-500 uppercase mb-2">Why It Matters</p>
+                        <ul className="space-y-1.5 text-[11px] text-zinc-400">
+                          <li className="flex items-start gap-2">
+                            <span className="text-emerald-500 mt-0.5">✓</span>
+                            <span>Compat: {data.recommendation.attributes?.compatibleWith?.join(", ") || data.source.name} ecosystem</span>
+                          </li>
+                          <li className="flex items-start gap-2">
+                            <span className="text-emerald-500 mt-0.5">✓</span>
+                            <span>Brand fit: {data.recommendation.attributes?.brand || "Any compatible brand"}</span>
+                          </li>
+                          <li className="flex items-start gap-2">
+                            <span className="text-emerald-500 mt-0.5">✓</span>
+                            <span>Price position: {formatPaise(data.recommendation.price)} — accessible add-on</span>
+                          </li>
+                        </ul>
+                      </div>
+
+                      {/* Catalog Evidence */}
                       <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
                         <p className="text-[10px] font-semibold tracking-[0.15em] text-zinc-500 uppercase mb-2">Catalog Evidence</p>
                         <div className="flex flex-wrap gap-2">
@@ -191,18 +243,22 @@ export default function MerchantPage() {
                           <span className="rounded-full border border-zinc-800 bg-zinc-900 px-3 py-1 text-[11px] text-zinc-400">Relevant category</span>
                         </div>
                         <p className="mt-2 text-[10px] text-zinc-600">
-                          Evidence derived from deterministic find_related_products (ACTIVE, stock&gt;0, compatibleWith + category).
+                          Evidence from deterministic find_related_products (ACTIVE, stock&gt;0, compatibleWith + category).
                         </p>
                       </div>
 
+                      {/* Candidates */}
                       {data.candidates && data.candidates.length > 0 && (
                         <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4">
                           <p className="text-[10px] font-semibold tracking-[0.15em] text-zinc-500 uppercase mb-2">Candidates considered</p>
-                          <div className="flex flex-wrap gap-1.5">
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
                             {data.candidates.map((c) => (
-                              <span key={c.slug} className="rounded-full border border-zinc-800 bg-zinc-950 px-2.5 py-1 text-[10px] text-zinc-500">
-                                {c.slug}
-                              </span>
+                              <div key={c.slug} className="flex items-center justify-between rounded-lg border border-zinc-800 bg-zinc-950 px-2.5 py-1.5">
+                                <span className="text-[10px] text-zinc-500 truncate">{c.slug}</span>
+                                <span className={`text-[10px] font-medium ${c.stock > 0 ? "text-zinc-500" : "text-red-400/60"}`}>
+                                  {c.stock > 0 ? `${c.stock} units` : "OOS"}
+                                </span>
+                              </div>
                             ))}
                           </div>
                         </div>
@@ -219,7 +275,7 @@ export default function MerchantPage() {
           </div>
         </div>
 
-        {/* Right Context Panel — desktop only */}
+        {/* Right Context Panel */}
         <div className="hidden lg:flex">
           <aside className="flex h-full w-56 flex-col border-l border-zinc-800 bg-zinc-950 px-3 py-4 text-xs" aria-label="Context panel">
             <div className="mb-5">
@@ -236,6 +292,12 @@ export default function MerchantPage() {
                 <li className="flex items-center gap-1.5"><span className="text-zinc-400">2</span> AI finds compatible</li>
                 <li className="flex items-center gap-1.5"><span className="text-zinc-400">3</span> Evidence grounded</li>
               </ul>
+            </div>
+            <div className="mb-5">
+              <p className="text-[10px] font-semibold tracking-[0.15em] text-zinc-500 uppercase mb-2">Active product</p>
+              <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-2.5">
+                <p className="text-[11px] text-zinc-200 truncate">{selectedProduct?.label || product}</p>
+              </div>
             </div>
             <div className="mt-auto border-t border-zinc-800 pt-3">
               <p className="text-[10px] text-zinc-700">Catalog grounded</p>
