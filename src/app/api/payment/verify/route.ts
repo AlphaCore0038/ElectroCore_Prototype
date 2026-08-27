@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getRazorpayConfig, verifySignature } from "@/lib/razorpay/client";
 import { auditLog } from "@/lib/audit/log";
+import { appendEvent } from "@/lib/event-store";
 
 export async function POST(request: Request) {
   let body: unknown;
@@ -177,12 +178,14 @@ export async function POST(request: Request) {
       return createdOrder;
     });
 
+    appendEvent({ type: "ORDER_CREATED", orderId: order.id, intentId, total: intent.total });
     return NextResponse.json({ ok: true, data: { orderId: order.id, status: order.status } });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     if (msg === "OUT_OF_STOCK" || msg === "STOCK_NEGATIVE") {
       await prisma.payment.update({ where: { id: payment.id }, data: { status: "FAILED", razorpayPaymentId, razorpaySignature } });
       await auditLog({ type: "PAYMENT_FAILED", intentId, paymentId: payment.id, reason: msg });
+      appendEvent({ type: "PURCHASE_FAILED", intentId, reason: msg });
       return NextResponse.json({ ok: false, error: "PAYMENT_FAILED", message: "Product unavailable" }, { status: 400 });
     }
     // unique constraint violation -> duplicate order
@@ -192,6 +195,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: true, data: { orderId: existingOrder.id, status: existingOrder.status } });
       }
     }
+    appendEvent({ type: "PURCHASE_FAILED", intentId, reason: msg });
     console.error("[payment/verify] transaction failed", e);
     return NextResponse.json({ ok: false, error: "INTERNAL_ERROR", message: "Verification failed" }, { status: 500 });
   }

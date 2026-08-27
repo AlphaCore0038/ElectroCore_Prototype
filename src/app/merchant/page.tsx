@@ -1,23 +1,12 @@
 "use client";
 
-import Link from "next/link";
 import { useState } from "react";
 import { ProductCard } from "@/components/product-card";
 import { LeftNav } from "@/components/left-nav";
+import { TopBar } from "@/components/top-bar";
 import { InventoryStatus } from "@/components/inventory-status";
-
-const PRODUCTS = [
-  { slug: "sony-wh-1000xm5", label: "Sony WH-1000XM5 — ₹29,990" },
-  { slug: "keychron-k3-max", label: "Keychron K3 Max — ₹16,490" },
-  { slug: "logitech-mx-master-3s", label: "Logitech MX Master 3S — ₹9,990" },
-  { slug: "anker-powercore-20000", label: "Anker PowerCore — ₹3,990" },
-  { slug: "anker-usb-c-100w", label: "Anker Cable 100W — ₹1,490" },
-  { slug: "samsung-t7-1tb", label: "Samsung T7 1TB — ₹8,990" },
-  { slug: "laptop-sleeve-14", label: "Laptop Sleeve 14 — ₹2,490" },
-  { slug: "logitech-brio-4k", label: "Logitech Brio — ₹7,490" },
-  { slug: "jbl-flip-6", label: "JBL Flip 6 — ₹11,990" },
-  { slug: "usb-c-hub-7in1", label: "Anker Hub 7-in-1 — ₹4,990" },
-];
+import { formatPaise } from "@/lib/format";
+import { PRODUCTS } from "@/lib/constants";
 
 type MerchantData = {
   recommendation: {
@@ -36,10 +25,6 @@ type MerchantData = {
   source: { name: string; slug: string };
   candidates?: { slug: string; stock: number }[];
 };
-
-function formatPaise(p: number) {
-  return `₹${(p / 100).toFixed(2).replace(/\.00$/, "")}`;
-}
 
 export default function MerchantPage() {
   const [product, setProduct] = useState("sony-wh-1000xm5");
@@ -71,47 +56,12 @@ export default function MerchantPage() {
 
   return (
     <div className="flex h-dvh flex-col bg-zinc-950 text-zinc-100">
-      {/* Top Bar */}
-      <header className="flex items-center justify-between border-b border-zinc-800 bg-zinc-950 px-4 py-2.5 lg:px-5 shrink-0">
-        <div className="flex items-center gap-3">
-          <button onClick={() => setMobileNav(!mobileNav)} className="lg:hidden text-zinc-400 hover:text-zinc-200 p-1" aria-label="Toggle navigation">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 12h18M3 6h18M3 18h18" /></svg>
-          </button>
-          <div className="flex items-center gap-2">
-            <div className="h-6 w-6 rounded-md bg-zinc-800 flex items-center justify-center text-[10px] font-bold text-zinc-300">E</div>
-            <span className="text-sm font-bold tracking-tight text-zinc-100 hidden sm:inline">ElectroCore</span>
-          </div>
-          <span className="text-[10px] font-semibold tracking-[0.2em] text-zinc-600 uppercase hidden sm:inline">AI Commerce</span>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <span className="flex items-center gap-1.5 rounded-full bg-zinc-900 border border-zinc-800 px-2.5 py-1 text-[10px] text-zinc-400">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse-dot" />
-            AI ASSISTANT
-          </span>
-          <Link
-            href="/"
-            className="rounded-full border border-zinc-800 bg-zinc-900 px-3 py-1 text-[11px] text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-colors hidden sm:inline"
-          >
-            AI Shopping
-          </Link>
-        </div>
-      </header>
-
-      {/* Mobile nav overlay */}
-      {mobileNav && (
-        <div className="lg:hidden border-b border-zinc-800 bg-zinc-950">
-          <div className="px-4 py-3 space-y-1">
-            <Link href="/" onClick={() => setMobileNav(false)} className="block rounded-lg px-3 py-2 text-sm text-zinc-400 hover:bg-zinc-900">AI Shopping</Link>
-            <Link href="/merchant" onClick={() => setMobileNav(false)} className="block rounded-lg bg-zinc-800 px-3 py-2 text-sm text-zinc-100">Merchant Advisor</Link>
-          </div>
-        </div>
-      )}
+      <TopBar mobileNavOpen={mobileNav} onToggleNav={() => setMobileNav(!mobileNav)} />
 
       {/* Three-Zone Body */}
       <div className="flex flex-1 overflow-hidden">
         <div className="hidden lg:flex">
-          <LeftNav activePage="merchant" />
+          <LeftNav />
         </div>
 
         {/* Center */}

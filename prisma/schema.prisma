@@ -101,20 +101,23 @@ model PurchaseIntent {
 }
 
 model Order {
-  id         String      @id @default(cuid())
-  intentId   String      @unique
-  intent     PurchaseIntent @relation(fields: [intentId], references: [id])
-  merchantId String
-  merchant   Merchant    @relation(fields: [merchantId], references: [id])
-  total      Int
-  currency   String      @default("INR")
-  status     OrderStatus @default(PAID)
-  createdAt  DateTime    @default(now())
-  items      OrderItem[]
-  payment    Payment?
-  audits     AuditEvent[]
+  id             String      @id @default(cuid())
+  intentId       String      @unique
+  intent         PurchaseIntent @relation(fields: [intentId], references: [id])
+  merchantId     String
+  merchant       Merchant    @relation(fields: [merchantId], references: [id])
+  conversationId String?
+  conversation   Conversation? @relation(fields: [conversationId], references: [id])
+  total          Int
+  currency       String      @default("INR")
+  status         OrderStatus @default(PAID)
+  createdAt      DateTime    @default(now())
+  items          OrderItem[]
+  payment        Payment?
+  audits         AuditEvent[]
 
   @@index([merchantId])
+  @@index([conversationId])
 }
 
 model OrderItem {
@@ -170,4 +173,26 @@ model AuditEvent {
   @@index([intentId])
   @@index([orderId])
   @@index([type, createdAt])
+}
+
+model Conversation {
+  id        String    @id @default(cuid())
+  title     String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  messages  Message[]
+  orders    Order[]
+
+  @@index([createdAt])
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role           String
+  content        String
+  createdAt      DateTime     @default(now())
+
+  @@index([conversationId, createdAt])
 }

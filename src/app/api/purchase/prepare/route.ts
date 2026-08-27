@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { getProductByIdOrSlug } from "@/lib/catalog/queries";
 import { evaluatePolicy } from "@/lib/purchase/policy";
 import { auditLog } from "@/lib/audit/log";
+import { appendEvent } from "@/lib/event-store";
 
 export async function POST(request: Request) {
   let body: unknown;
@@ -71,6 +72,8 @@ export async function POST(request: Request) {
     intentId: intent.id,
     metadata: { productId: product.id, slug: product.slug, quantity, unitPrice, total, currency },
   });
+
+  appendEvent({ type: "PURCHASE_INTENT", intentId: intent.id, product: product.slug, total, currency });
 
   return NextResponse.json({
     ok: true,
