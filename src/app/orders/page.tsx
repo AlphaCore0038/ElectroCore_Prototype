@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { TopBar } from "@/components/top-bar";
 import { LeftNav } from "@/components/left-nav";
 
@@ -28,14 +28,30 @@ export default function OrdersPage() {
   const [mobileNav, setMobileNav] = useState(false);
   const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
   const [audit, setAudit] = useState<Record<string, AuditEvent[]>>({});
+  const [confirmHide, setConfirmHide] = useState<string | null>(null);
+  const [hiding, setHiding] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+  const confirmCloseRef = useRef<HTMLButtonElement>(null);
 
-  useEffect(() => {
+  const loadOrders = useCallback(() => {
     fetch("/api/orders")
       .then((r) => r.json())
       .then((j: { data?: Order[] }) => { if (j.data) setOrders(j.data); })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => { loadOrders(); }, [loadOrders]);
+
+  useEffect(() => {
+    if (confirmHide) confirmCloseRef.current?.focus();
+  }, [confirmHide]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 3000);
+    return () => clearTimeout(t);
+  }, [toast]);
 
   async function toggleAudit(order: Order) {
     if (expandedOrder === order.id) { setExpandedOrder(null); return; }
@@ -47,6 +63,21 @@ export default function OrdersPage() {
         if (j.data?.events) setAudit((prev) => ({ ...prev, [order.id]: j.data!.events }));
       } catch {}
     }
+  }
+
+  async function handleHideOrder() {
+    if (!confirmHide || hiding) return;
+    setHiding(true);
+    try {
+      const res = await fetch(`/api/orders/${confirmHide}`, { method: "DELETE" });
+      if (res.ok) {
+        setOrders((prev) => prev.filter((o) => o.id !== confirmHide));
+        if (expandedOrder === confirmHide) setExpandedOrder(null);
+        setToast("Order removed from history.");
+      }
+    } catch {}
+    setHiding(false);
+    setConfirmHide(null);
   }
 
   return (
@@ -70,7 +101,7 @@ export default function OrdersPage() {
                     <span className="text-2xl font-bold text-zinc-300">▤</span>
                   </div>
                   <p className="text-sm text-zinc-400">No orders yet</p>
-                  <p className="mt-1 text-[11px] text-zinc-600">Complete a purchase to see your order history.</p>
+                  <p className="mt-1 text-[11px] text-zinc-600">Your completed purchases will appear here.</p>
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -89,9 +120,14 @@ export default function OrdersPage() {
                         <p className="text-base font-bold text-zinc-100 mt-1">{formatPaise(o.total)}</p>
                         <p className="text-[10px] text-zinc-600 mt-1 font-mono">Order {o.id.slice(0, 12)}…</p>
                         <p className="text-[10px] text-zinc-600">{new Date(o.createdAt).toLocaleDateString()}</p>
-                        <button onClick={() => toggleAudit(o)} className="mt-2 text-[11px] font-medium text-zinc-400 hover:text-zinc-200 transition-colors">
-                          {expandedOrder === o.id ? "Hide purchase journey ↑" : "View purchase journey →"}
-                        </button>
+                        <div className="mt-2 flex items-center gap-3">
+                          <button onClick={() => toggleAudit(o)} className="text-[11px] font-medium text-zinc-400 hover:text-zinc-200 transition-colors">
+                            {expandedOrder === o.id ? "Hide purchase journey ↑" : "View purchase journey →"}
+                          </button>
+                          <button onClick={() => setConfirmHide(o.id)} className="text-[11px] font-medium text-zinc-600 hover:text-zinc-400 transition-colors">
+                            Remove from history
+                          </button>
+                        </div>
                       </div>
 
                       {expandedOrder === o.id && audit[o.id] && (
@@ -121,6 +157,35 @@ export default function OrdersPage() {
           </div>
         </div>
       </div>
+
+      {/* Remove from history confirmation dialog */}
+      {confirmHide && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => !hiding && setConfirmHide(null)}>
+          <div className="mx-4 w-full max-w-sm rounded-xl border border-zinc-800 bg-zinc-900 p-5 shadow-xl" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Remove order from history">
+            <p className="text-sm font-semibold text-zinc-100 mb-2">Remove order from history?</p>
+            <p className="text-[11px] text-zinc-400 mb-5 leading-5">
+              This will hide this order from your order history. The transaction, payment, and audit record will be preserved.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button ref={confirmCloseRef} onClick={() => setConfirmHide(null)} disabled={hiding} className="rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-1.5 text-[11px] font-medium text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-colors disabled:opacity-50">
+                Cancel
+              </button>
+              <button onClick={handleHideOrder} disabled={hiding} className="rounded-lg bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-[11px] font-medium text-zinc-200 hover:bg-zinc-700 transition-colors disabled:opacity-50">
+                {hiding ? "Removing…" : "Remove from history"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Toast */}
+      {toast && (
+        <div className="fixed bottom-4 right-4 z-50 animate-in fade-in slide-in-from-bottom-2">
+          <div className="rounded-lg border border-zinc-800 bg-zinc-900 px-4 py-2.5 text-[11px] font-medium text-zinc-300 shadow-lg">
+            {toast}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -18,9 +18,11 @@ function deriveTitle(title: string | null, id: string) {
 export function LeftNav({
   conversationId,
   onConversationDeleted,
+  onSelectConversation,
 }: {
   conversationId?: string | null;
   onConversationDeleted?: (deletedId: string) => void;
+  onSelectConversation?: (conversationId: string) => void;
 }) {
   const pathname = usePathname();
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -38,7 +40,7 @@ export function LeftNav({
       .finally(() => setLoaded(true));
   }, []);
 
-  useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => { refresh(); }, [refresh, conversationId]);
 
   async function handleDelete(e: React.MouseEvent, id: string) {
     e.preventDefault();
@@ -142,14 +144,25 @@ export function LeftNav({
                 <div className={`group flex items-center gap-1 rounded-lg transition-all duration-150 ${
                   active ? "bg-zinc-800 text-zinc-100" : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200"
                 }`}>
-                  <Link
-                    href={`/?conversationId=${c.id}`}
-                    className="flex flex-1 items-center gap-2 px-2.5 py-1.5 min-w-0"
-                  >
-                    <span className="text-[11px] shrink-0">◇</span>
-                    <span className="truncate">{deriveTitle(c.title, c.id)}</span>
-                    {active && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" />}
-                  </Link>
+                  {onSelectConversation ? (
+                    <button
+                      onClick={() => onSelectConversation(c.id)}
+                      className="flex flex-1 items-center gap-2 px-2.5 py-1.5 min-w-0 text-left"
+                    >
+                      <span className="text-[11px] shrink-0">◇</span>
+                      <span className="truncate">{deriveTitle(c.title, c.id)}</span>
+                      {active && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" />}
+                    </button>
+                  ) : (
+                    <Link
+                      href={`/?conversationId=${c.id}`}
+                      className="flex flex-1 items-center gap-2 px-2.5 py-1.5 min-w-0"
+                    >
+                      <span className="text-[11px] shrink-0">◇</span>
+                      <span className="truncate">{deriveTitle(c.title, c.id)}</span>
+                      {active && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" />}
+                    </Link>
+                  )}
                   <button
                     onClick={(e) => handleDelete(e, c.id)}
                     disabled={deleting === c.id}

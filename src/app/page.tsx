@@ -364,6 +364,21 @@ function HomeInner() {
     }
   }
 
+  function handleConversationSelected(selectedId: string) {
+    setConversationId(selectedId);
+    setMsgs([]);
+    setLoading(true);
+    fetch(`/api/conversations/${selectedId}`)
+      .then((r) => r.json())
+      .then((j: { data?: { messages?: { role: string; content: string }[] } }) => {
+        if (j.data?.messages) {
+          setMsgs(j.data.messages.map((m) => ({ role: m.role as "user" | "assistant", content: m.content })));
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }
+
   return (
     <div className="flex h-dvh flex-col bg-zinc-950 text-zinc-100">
       <TopBar mobileNavOpen={mobileNav} onToggleNav={() => setMobileNav(!mobileNav)} />
@@ -371,7 +386,7 @@ function HomeInner() {
       {/* Three-Zone Body */}
       <div className="flex flex-1 overflow-hidden">
         <div className="hidden lg:flex">
-          <LeftNav conversationId={conversationId} onConversationDeleted={handleConversationDeleted} />
+          <LeftNav conversationId={conversationId} onConversationDeleted={handleConversationDeleted} onSelectConversation={(id) => { if (window.history) window.history.replaceState(null, "", `/?conversationId=${id}`); handleConversationSelected(id); }} />
         </div>
 
         {/* Center */}

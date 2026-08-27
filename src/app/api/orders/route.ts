@@ -11,6 +11,7 @@ export async function GET(request: Request) {
   }
 
   const orders = await prisma.order.findMany({
+    where: { hiddenAt: null },
     include: {
       items: true,
       payment: { select: { status: true, razorpayPaymentId: true, verifiedAt: true } },

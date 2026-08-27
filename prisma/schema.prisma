@@ -111,6 +111,7 @@ model Order {
   total          Int
   currency       String      @default("INR")
   status         OrderStatus @default(PAID)
+  hiddenAt       DateTime?
   createdAt      DateTime    @default(now())
   items          OrderItem[]
   payment        Payment?
